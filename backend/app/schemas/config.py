@@ -1,0 +1,44 @@
+from pydantic import BaseModel, Field
+
+
+class ConfigResponse(BaseModel):
+    """Current strategy configuration — what the engine is using right now."""
+    # Entry parameters
+    rsi_period: int = 14
+    rsi_overbought: int = 70
+    rsi_oversold: int = 30
+    ema_fast: int = 9
+    ema_slow: int = 21
+    volume_multiplier: float = 1.5
+    min_signal_strength: float = 2.0
+    technical_weight: float = 0.5
+    sentiment_weight: float = 0.3
+    fundamental_weight: float = 0.2
+
+    # Exit parameters
+    atr_stop_multiplier: float = 1.5
+    atr_target_multiplier: float = 2.5
+    default_stop_loss_pct: float = 2.0
+    default_profit_target_pct: float = 3.0
+    max_hold_bars: int = 60
+
+    model_config = {"from_attributes": True}
+
+
+class ConfigUpdateRequest(BaseModel):
+    """Partial update — only include fields you want to change."""
+    rsi_period: int | None = None
+    rsi_overbought: int | None = None
+    rsi_oversold: int | None = None
+    ema_fast: int | None = None
+    ema_slow: int | None = None
+    volume_multiplier: float | None = Field(None, ge=0.1, le=10.0)
+    min_signal_strength: float | None = Field(None, ge=0.0, le=5.0)
+    technical_weight: float | None = Field(None, ge=0.0, le=1.0)
+    sentiment_weight: float | None = Field(None, ge=0.0, le=1.0)
+    fundamental_weight: float | None = Field(None, ge=0.0, le=1.0)
+    atr_stop_multiplier: float | None = Field(None, ge=0.1, le=5.0)
+    atr_target_multiplier: float | None = Field(None, ge=0.5, le=10.0)
+    default_stop_loss_pct: float | None = Field(None, ge=0.1, le=10.0)
+    default_profit_target_pct: float | None = Field(None, ge=0.5, le=20.0)
+    max_hold_bars: int | None = Field(None, ge=5, le=300)
