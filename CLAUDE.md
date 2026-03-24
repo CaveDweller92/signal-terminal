@@ -92,9 +92,13 @@ signal-terminal/
 - Exit strategies follow the `ExitStrategy` ABC (`positions/exit_strategies/base.py`)
 - All exit strategy `evaluate()` methods return `ExitSignalResult | None`
 
-### Frontend
-- Strict TypeScript — no `any`
+### Frontend (Strict TypeScript)
+- `strict: true` in `tsconfig.json`
+- **No `any`** — use `unknown` + type guards or proper generics
+- Prefer `interface` for object shapes, `type` for unions/intersections/aliases
+- All props explicitly typed — no inline anonymous types
 - Types defined in `src/types/` (one file per domain)
+- `as` type assertions only when unavoidable (e.g., API responses) — prefer narrowing
 - API calls go through `src/services/api.ts` only
 - WebSocket handled in `src/services/websocket.ts`
 - Tailwind for styling; dark terminal theme
