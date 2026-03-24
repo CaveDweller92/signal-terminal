@@ -1,0 +1,41 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+psycopg2-binary==2.9.10
+
+# Cache + Task queue
+redis==5.2.1
+celery[redis]==5.4.0
+
+# Data / ML
+numpy==2.2.1
+pandas==2.2.3
+scipy==1.15.0
+scikit-learn==1.6.1
+hmmlearn==0.3.3
+
+# AI
+anthropic==0.42.0
+
+# Notifications
+resend==2.0.0
+
+# Config
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# Utilities
+httpx==0.28.1
+pytz==2024.2
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+httpx==0.28.1
