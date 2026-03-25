@@ -210,7 +210,7 @@ def detect_ema_crossover(
 
     return {
         "crossover": "bullish" if current_above else "bearish",
-        "just_crossed": just_crossed,
+        "just_crossed": bool(just_crossed),
         "ema_fast": float(ema_fast[-1]),
         "ema_slow": float(ema_slow[-1]),
         "spread": float(ema_fast[-1] - ema_slow[-1]),
