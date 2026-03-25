@@ -4,9 +4,9 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql+asyncpg://signal:signal@localhost:5432/signal_terminal"
-    database_url_sync: str = "postgresql://signal:signal@localhost:5432/signal_terminal"
-    redis_url: str = "redis://localhost:6379/0"
+    database_url: str = "postgresql+asyncpg://signal:signal@localhost:5555/signal_terminal"
+    database_url_sync: str = "postgresql://signal:signal@localhost:5555/signal_terminal"
+    redis_url: str = "redis://localhost:6380/0"
 
     # Market Data
     polygon_api_key: str = ""

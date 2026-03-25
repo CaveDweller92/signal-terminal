@@ -43,7 +43,7 @@ Build one phase at a time. Validate before moving on.
 
 | # | Phase | Status | Notes |
 |---|---|---|---|
-| 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `TODO` | Start here |
+| 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `DONE` | Ports: PostgreSQL 5555, Redis 6380 |
 | 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `TODO` | |
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `TODO` | Needs ANTHROPIC_API_KEY |
 | 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `TODO` | Core new feature |
@@ -113,8 +113,8 @@ signal-terminal/
 ## Environment Variables (key ones)
 
 ```env
-DATABASE_URL=postgresql+asyncpg://signal:signal@localhost:5432/signal_terminal
-REDIS_URL=redis://localhost:6379/0
+DATABASE_URL=postgresql+asyncpg://signal:signal@localhost:5555/signal_terminal
+REDIS_URL=redis://localhost:6380/0
 ANTHROPIC_API_KEY=         # Required for Phase 3+ (Claude watchlist + meta-review)
 POLYGON_API_KEY=           # Optional — simulated data used if blank
 FINNHUB_API_KEY=           # Optional
