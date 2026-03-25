@@ -44,7 +44,7 @@ Build one phase at a time. Validate before moving on.
 | # | Phase | Status | Notes |
 |---|---|---|---|
 | 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `DONE` | Ports: PostgreSQL 5555, Redis 6380 |
-| 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `TODO` | |
+| 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket deferred to Phase 4 |
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `TODO` | Needs ANTHROPIC_API_KEY |
 | 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `TODO` | Core new feature |
 | 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `TODO` | Most complex |
