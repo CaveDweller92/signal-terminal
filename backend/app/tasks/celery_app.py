@@ -14,6 +14,15 @@ celery = Celery(
     "signal_terminal",
     broker=settings.redis_url,
     backend=settings.redis_url,
+    include=[
+        "app.tasks.premarket_scan",
+        "app.tasks.watchlist_build",
+        "app.tasks.position_monitor",
+        "app.tasks.regime_detection",
+        "app.tasks.daily_meta_review",
+        "app.tasks.performance_calc",
+        "app.tasks.universe_update",
+    ],
 )
 
 celery.conf.update(
