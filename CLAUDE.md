@@ -46,7 +46,7 @@ Build one phase at a time. Validate before moving on.
 | 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `DONE` | Ports: PostgreSQL 5555, Redis 6380 |
 | 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket deferred to Phase 4 |
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `DONE` | Needs ANTHROPIC_API_KEY for AI picks, fallback works without |
-| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `IN PROGRESS` | Core new feature |
+| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `DONE` | 5 exit strategies + WebSocket broadcast |
 | 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `TODO` | Most complex |
 | 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `TODO` | |
 
@@ -126,6 +126,14 @@ signal-terminal/
 - API calls go through `src/services/api.ts` only
 - WebSocket handled in `src/services/websocket.ts`
 - Tailwind for styling; dark terminal theme
+
+### Testing
+- **Unit tests required** for all critical logic before moving to next phase
+- Tests live in `backend/tests/` — one file per module (e.g., `test_indicators.py`)
+- Use `pytest` + `pytest-asyncio` for async tests
+- Critical = anything that produces numbers users act on: indicators, analyzer, exit strategies, P&L calculations, position manager
+- Mock external dependencies (DB, APIs) — test pure logic
+- Run with `cd backend && pytest tests/ -v`
 
 ### General
 - No direct brokerage integration — user logs trades manually
