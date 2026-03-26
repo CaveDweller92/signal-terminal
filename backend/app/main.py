@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.signals import router as signals_router
 from app.api.regime import router as regime_router
+from app.api.discovery import router as discovery_router
 
 app = FastAPI(
     title="Signal Terminal",
@@ -30,6 +31,7 @@ app.add_middleware(
 # Mount route groups
 app.include_router(signals_router)
 app.include_router(regime_router)
+app.include_router(discovery_router)
 
 
 @app.get("/")
