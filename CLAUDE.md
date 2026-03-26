@@ -45,8 +45,8 @@ Build one phase at a time. Validate before moving on.
 |---|---|---|---|
 | 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `DONE` | Ports: PostgreSQL 5555, Redis 6380 |
 | 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket deferred to Phase 4 |
-| 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `TODO` | Needs ANTHROPIC_API_KEY |
-| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `TODO` | Core new feature |
+| 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `DONE` | Needs ANTHROPIC_API_KEY for AI picks, fallback works without |
+| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `IN PROGRESS` | Core new feature |
 | 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `TODO` | Most complex |
 | 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `TODO` | |
 
@@ -54,7 +54,7 @@ Update the `Status` column as phases complete: `TODO` → `IN PROGRESS` → `DON
 
 ---
 
-## Project Structure (target)
+## Project Structure (actual)
 
 ```
 signal-terminal/
@@ -62,22 +62,46 @@ signal-terminal/
 ├── SIGNAL-TERMINAL-ADAPTIVE.md  ← full spec
 ├── docker-compose.yml
 ├── .env.example
+├── .gitignore
 ├── Makefile
-├── frontend/                    ← React + TypeScript
-└── backend/                     ← Python + FastAPI
+├── frontend/                    ← React + TypeScript (Phase 2)
+└── backend/
+    ├── alembic.ini
+    ├── requirements.txt
     └── app/
-        ├── main.py
-        ├── config.py
+        ├── main.py              ← FastAPI entry point
+        ├── config.py            ← Pydantic Settings (single source of truth)
         ├── models/              ← SQLAlchemy ORM models
+        │   ├── signal.py, parameter_snapshot.py, regime_log.py
+        │   ├── meta_review.py, performance.py
+        │   ├── stock_universe.py, screener_result.py, watchlist.py
+        │   └── (Phase 4: position.py, exit_signal.py)
         ├── schemas/             ← Pydantic request/response schemas
+        │   ├── signals.py, config.py, regime.py, performance.py
+        │   └── discovery.py
         ├── api/                 ← FastAPI route handlers
-        ├── engine/              ← Signal engine (indicators, analyzer, data provider)
-        ├── positions/           ← Position manager + exit strategies
-        ├── discovery/           ← Universe, screener, AI watchlist
-        ├── adaptation/          ← Layer 1/2/3 adaptive system
-        ├── services/            ← External integrations (market data, news, Claude API)
+        │   ├── signals.py, regime.py, discovery.py
+        │   └── (Phase 4: positions.py, websocket.py)
+        ├── engine/              ← Signal engine
+        │   ├── indicators.py    ← EMA, RSI, MACD, ATR, volume ratio
+        │   ├── analyzer.py      ← Conviction scoring → BUY/SELL/HOLD
+        │   ├── data_provider.py ← Simulated + real (strategy pattern)
+        │   ├── regime.py        ← Heuristic regime detector
+        │   ├── sentiment.py     ← Simulated sentiment (Phase 3+ real)
+        │   └── fundamentals.py  ← Simulated fundamentals (Phase 3+ real)
+        ├── discovery/           ← Stock discovery (flat modules)
+        │   ├── universe.py      ← Seed + query ~93 stocks
+        │   ├── screener.py      ← 6-dimension pre-market screener
+        │   └── ai_watchlist.py  ← Claude picks 12 from top 30
+        ├── positions/           ← Position manager + exit strategies (Phase 4)
+        │   └── exit_strategies/
+        ├── adaptation/          ← Layer 1/2/3 adaptive system (Phase 5)
+        ├── services/            ← External integrations
         ├── tasks/               ← Celery tasks + beat schedule
-        └── db/                  ← Database init + migrations
+        └── db/
+            ├── database.py      ← Async engine + session + get_db dependency
+            └── migrations/
+                └── versions/    ← 001_initial_schema, 002_discovery_tables
 ```
 
 ---
@@ -150,22 +174,23 @@ Every 30m Regime detection
 
 ## Validation Checklist Per Phase
 
-**Phase 1 done when:**
-- [ ] `GET /api/signals` returns simulated BUY/SELL signals with conviction scores
-- [ ] `GET /api/regime` returns a current regime state
-- [ ] DB migrations run cleanly (`alembic upgrade head`)
-- [ ] Backend starts with `uvicorn app.main:app --reload`
+**Phase 1 — DONE:**
+- [x] `GET /api/signals` returns simulated BUY/SELL signals with conviction scores
+- [x] `GET /api/regime` returns a current regime state
+- [x] DB migrations run cleanly (`alembic upgrade head`)
+- [x] Backend starts with `uvicorn app.main:app --reload`
 
-**Phase 2 done when:**
-- [ ] React app loads at `localhost:5173`
-- [ ] Watchlist sidebar renders signal list
-- [ ] Clicking a stock shows chart + technical/sentiment tabs
-- [ ] WebSocket live-updates signal feed
+**Phase 2 — DONE:**
+- [x] React app loads at `localhost:5173`
+- [x] Watchlist sidebar renders signal list
+- [x] Clicking a stock shows chart + technical/sentiment tabs
+- [ ] WebSocket live-updates signal feed (deferred to Phase 4)
 
-**Phase 3 done when:**
-- [ ] `make scan` triggers screener, top 30 results in DB
-- [ ] `make watchlist` calls Claude API, 12 picks with reasoning in DB
-- [ ] Discovery tab shows screener heatmap + AI picks
+**Phase 3 — DONE:**
+- [x] `POST /api/discovery/scan` triggers screener, top 30 results in DB
+- [x] `POST /api/discovery/watchlist` calls Claude API (or fallback), 12 picks with reasoning in DB
+- [x] `POST /api/discovery/seed` seeds ~93 stocks (S&P 500, NASDAQ 100, TSX)
+- [ ] Discovery tab in frontend shows screener heatmap + AI picks (frontend wiring deferred)
 
 **Phase 4 done when:**
 - [ ] Trade entry form opens a position

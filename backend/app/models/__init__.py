@@ -6,6 +6,8 @@ from app.models.performance import DailyPerformance
 from app.models.stock_universe import StockUniverse
 from app.models.screener_result import ScreenerResult
 from app.models.watchlist import DailyWatchlist
+from app.models.position import Position
+from app.models.exit_signal import ExitSignal
 
 __all__ = [
     "Signal",
@@ -16,4 +18,6 @@ __all__ = [
     "StockUniverse",
     "ScreenerResult",
     "DailyWatchlist",
+    "Position",
+    "ExitSignal",
 ]

@@ -5,6 +5,14 @@ from app.schemas.performance import (
     DailyPerformanceResponse,
     PerformanceSummaryResponse,
 )
+from app.schemas.positions import (
+    TradeInput,
+    CloseInput,
+    ExitUpdateInput,
+    PositionResponse,
+    ExitSignalResponse,
+    TradeStatsResponse,
+)
 
 __all__ = [
     "SignalResponse",
@@ -15,4 +23,10 @@ __all__ = [
     "RegimeHistoryResponse",
     "DailyPerformanceResponse",
     "PerformanceSummaryResponse",
+    "TradeInput",
+    "CloseInput",
+    "ExitUpdateInput",
+    "PositionResponse",
+    "ExitSignalResponse",
+    "TradeStatsResponse",
 ]

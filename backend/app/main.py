@@ -12,6 +12,8 @@ from app.config import settings
 from app.api.signals import router as signals_router
 from app.api.regime import router as regime_router
 from app.api.discovery import router as discovery_router
+from app.api.positions import router as positions_router
+from app.api.websocket import router as websocket_router
 
 app = FastAPI(
     title="Signal Terminal",
@@ -32,6 +34,8 @@ app.add_middleware(
 app.include_router(signals_router)
 app.include_router(regime_router)
 app.include_router(discovery_router)
+app.include_router(positions_router)
+app.include_router(websocket_router)
 
 
 @app.get("/")
