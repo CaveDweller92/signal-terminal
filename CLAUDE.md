@@ -213,17 +213,75 @@ Every 30m Regime detection
 
 ---
 
+## Quick Start (new machine)
+
+```powershell
+# 1. Clone and enter project
+git clone https://github.com/CaveDweller92/signal-terminal.git
+cd signal-terminal
+
+# 2. Copy env file
+cp .env.example .env    # Edit with your API keys if needed
+
+# 3. Start DB + Redis
+docker compose up db redis -d
+
+# 4. Install Python deps (if running backend locally)
+cd backend
+pip install -r requirements.txt
+
+# 5. Run migrations + seed data
+python -m alembic upgrade head
+python scripts/seed_universe.py
+python scripts/seed_historical.py
+
+# 6. Start backend
+uvicorn app.main:app --reload --port 8000
+
+# 7. Start frontend (separate terminal)
+cd ../frontend
+npm install
+npm run dev
+```
+
+Or use Docker for everything: `.\run.ps1 dev`
+
+---
+
 ## Useful Commands
 
+**Windows (PowerShell) — use `.\run.ps1`:**
+```powershell
+.\run.ps1 dev             # Start everything via Docker Compose
+.\run.ps1 cold-start      # migrate + seed-universe + seed (first time)
+.\run.ps1 test            # Run all 104 backend tests
+.\run.ps1 migrate         # Run Alembic migrations
+.\run.ps1 seed-universe   # Load S&P 500, NASDAQ 100, TSX stocks
+.\run.ps1 seed            # Generate simulated historical data
+.\run.ps1 scan            # Manually trigger pre-market screener
+.\run.ps1 watchlist       # Manually trigger Claude watchlist build
+.\run.ps1 review          # Trigger daily meta-review
+.\run.ps1 logs            # Tail backend + Celery logs
+.\run.ps1                 # Show all available commands
+```
+
+**Linux/Mac — use `make`:**
 ```bash
 make dev              # Start everything via Docker Compose
-make migrate          # Run Alembic migrations
-make seed-universe    # Load S&P 500, NASDAQ 100, TSX stocks
-make seed             # Generate simulated historical data
-make train-regime     # Train HMM regime model on historical data
-make backtest         # Backtest strategy
+make cold-start       # migrate + seed-universe + seed
+make test             # Run all backend tests
 make scan             # Manually trigger pre-market screener
 make watchlist        # Manually trigger Claude watchlist build
-make test             # Run backend tests
-make logs             # Tail backend + Celery logs
 ```
+
+---
+
+## Service URLs (when running)
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:8000 |
+| API Docs (Swagger) | http://localhost:8000/docs |
+| PostgreSQL | localhost:5555 |
+| Redis | localhost:6380 |
