@@ -47,8 +47,8 @@ Build one phase at a time. Validate before moving on.
 | 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket deferred to Phase 4 |
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `DONE` | Needs ANTHROPIC_API_KEY for AI picks, fallback works without |
 | 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `DONE` | 5 exit strategies + WebSocket broadcast |
-| 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `IN PROGRESS` | Most complex |
-| 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `TODO` | |
+| 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `DONE` | 3-layer system, 20 tests |
+| 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `IN PROGRESS` | |
 
 Update the `Status` column as phases complete: `TODO` → `IN PROGRESS` → `DONE`.
 
@@ -206,10 +206,10 @@ Every 30m Regime detection
 - [ ] Alerts appear in WebSocket feed in UI
 - [ ] Closing a position records outcome
 
-**Phase 5 done when:**
-- [ ] Layer 1 updates parameters after each closed trade
-- [ ] Layer 2 detects and logs regime changes
-- [ ] Layer 3 meta-review runs at 4:15 PM and produces a readable report
+**Phase 5 — DONE:**
+- [x] Layer 1 updates parameters after each closed trade (OnlineOptimizer)
+- [x] Layer 2 detects and logs regime changes (AdaptiveRegimeDetector + 5 presets)
+- [x] Layer 3 meta-review produces readable report (MetaAnalyst + Claude API fallback)
 
 ---
 

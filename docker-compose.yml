@@ -31,6 +31,69 @@ services:
       timeout: 3s
       retries: 5
 
+  backend:
+    build: ./backend
+    container_name: signal-terminal-backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_terminal
+      DATABASE_URL_SYNC: postgresql://signal:signal@db:5432/signal_terminal
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+
+  celery-worker:
+    build: ./backend
+    container_name: signal-terminal-celery-worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_terminal
+      DATABASE_URL_SYNC: postgresql://signal:signal@db:5432/signal_terminal
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    volumes:
+      - ./backend:/app
+
+  celery-beat:
+    build: ./backend
+    container_name: signal-terminal-celery-beat
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_terminal
+      DATABASE_URL_SYNC: postgresql://signal:signal@db:5432/signal_terminal
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    container_name: signal-terminal-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
 volumes:
   pgdata:
   redisdata:

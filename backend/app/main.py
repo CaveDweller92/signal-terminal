@@ -5,6 +5,8 @@ Start with:
     uvicorn app.main:app --reload
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,11 +17,24 @@ from app.api.discovery import router as discovery_router
 from app.api.positions import router as positions_router
 from app.api.websocket import router as websocket_router
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title="Signal Terminal",
     description="Self-adapting intraday stock trading signals",
     version="0.1.0",
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Log configuration status on startup."""
+    logger.info("Signal Terminal starting up...")
+    logger.info(f"  Simulated data: {settings.use_simulated_data}")
+    logger.info(f"  Market data API: {'configured' if settings.has_market_data_key else 'not configured (using simulated)'}")
+    logger.info(f"  Anthropic API: {'configured' if settings.has_anthropic_key else 'not configured (fallback mode)'}")
+    logger.info(f"  Notifications: {'configured' if settings.resend_api_key else 'not configured (logging only)'}")
+    logger.info(f"  Timezone: {settings.timezone}")
 
 # CORS — allow the React frontend (localhost:5173) to call the API
 app.add_middleware(
