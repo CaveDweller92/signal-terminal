@@ -48,7 +48,7 @@ Build one phase at a time. Validate before moving on.
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `DONE` | Needs ANTHROPIC_API_KEY for AI picks, fallback works without |
 | 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `DONE` | 5 exit strategies + WebSocket broadcast |
 | 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `DONE` | 3-layer system, 20 tests |
-| 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `IN PROGRESS` | |
+| 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `DONE` | Celery beat, Resend email, GH Actions |
 
 Update the `Status` column as phases complete: `TODO` → `IN PROGRESS` → `DONE`.
 
