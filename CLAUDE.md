@@ -44,11 +44,12 @@ Build one phase at a time. Validate before moving on.
 | # | Phase | Status | Notes |
 |---|---|---|---|
 | 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `DONE` | Ports: PostgreSQL 5555, Redis 6380 |
-| 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket deferred to Phase 4 |
+| 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket live signal feed still polling |
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `DONE` | Needs ANTHROPIC_API_KEY for AI picks, fallback works without |
-| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `DONE` | 5 exit strategies + WebSocket broadcast |
+| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `DONE` | 5 exit strategies + WebSocket broadcast + full frontend UI |
 | 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `DONE` | 3-layer system, 20 tests |
 | 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `DONE` | Celery beat, Resend email, GH Actions |
+| 7 | Adaptation & Performance UI — REST endpoints + frontend panels for parameter drift, meta-review, equity curve | `TODO` | Backend models exist; need API routes + frontend components |
 
 Update the `Status` column as phases complete: `TODO` → `IN PROGRESS` → `DONE`.
 
@@ -64,7 +65,19 @@ signal-terminal/
 ├── .env.example
 ├── .gitignore
 ├── Makefile
-├── frontend/                    ← React + TypeScript (Phase 2)
+├── frontend/                    ← React + TypeScript
+│   └── src/
+│       ├── types/               ← market.ts, positions.ts, discovery.ts
+│       ├── services/            ← api.ts, websocket.ts
+│       ├── hooks/               ← useSignals, useRegime, usePositions, useWebSocket
+│       └── components/
+│           ├── layout/          ← Header, Watchlist, DetailPanel
+│           ├── common/          ← SignalBadge, RegimeBadge, StatBox, PnlBadge
+│           ├── positions/       ← PositionsPanel, PositionList, TradeEntryForm,
+│           │                      ClosePositionModal, PositionRow, TradeHistory
+│           ├── alerts/          ← AlertFeed, AlertItem
+│           └── discovery/       ← DiscoveryPanel, ScreenerTable, WatchlistGrid,
+│                                   WatchlistCard, ScoreBar
 └── backend/
     ├── alembic.ini
     ├── requirements.txt
@@ -75,33 +88,41 @@ signal-terminal/
         │   ├── signal.py, parameter_snapshot.py, regime_log.py
         │   ├── meta_review.py, performance.py
         │   ├── stock_universe.py, screener_result.py, watchlist.py
-        │   └── (Phase 4: position.py, exit_signal.py)
+        │   └── position.py, exit_signal.py
         ├── schemas/             ← Pydantic request/response schemas
         │   ├── signals.py, config.py, regime.py, performance.py
-        │   └── discovery.py
+        │   ├── discovery.py, positions.py
         ├── api/                 ← FastAPI route handlers
         │   ├── signals.py, regime.py, discovery.py
-        │   └── (Phase 4: positions.py, websocket.py)
+        │   └── positions.py, websocket.py
         ├── engine/              ← Signal engine
         │   ├── indicators.py    ← EMA, RSI, MACD, ATR, volume ratio
         │   ├── analyzer.py      ← Conviction scoring → BUY/SELL/HOLD
         │   ├── data_provider.py ← Simulated + real (strategy pattern)
         │   ├── regime.py        ← Heuristic regime detector
-        │   ├── sentiment.py     ← Simulated sentiment (Phase 3+ real)
-        │   └── fundamentals.py  ← Simulated fundamentals (Phase 3+ real)
-        ├── discovery/           ← Stock discovery (flat modules)
-        │   ├── universe.py      ← Seed + query ~93 stocks
+        │   ├── sentiment.py     ← Simulated sentiment
+        │   └── fundamentals.py  ← Simulated fundamentals
+        ├── discovery/           ← Stock discovery
+        │   ├── universe.py      ← Seed + query ~830 stocks
         │   ├── screener.py      ← 6-dimension pre-market screener
         │   └── ai_watchlist.py  ← Claude picks 12 from top 30
-        ├── positions/           ← Position manager + exit strategies (Phase 4)
-        │   └── exit_strategies/
-        ├── adaptation/          ← Layer 1/2/3 adaptive system (Phase 5)
-        ├── services/            ← External integrations
+        ├── positions/           ← Position manager + exit strategies
+        │   ├── manager.py, monitor.py
+        │   └── exit_strategies/ ← base, stop_loss, profit_target,
+        │                           indicator_reversal, sentiment_shift,
+        │                           time_based, composite
+        ├── adaptation/          ← Layer 1/2/3 adaptive system
+        │   ├── layer1_optimizer/  ← Bayesian optimizer (OnlineOptimizer)
+        │   ├── layer2_regime/     ← HMM regime detector (5 presets)
+        │   ├── layer3_meta/       ← Claude meta-analyst
+        │   └── coordinator.py
+        ├── services/            ← External integrations (notifications)
         ├── tasks/               ← Celery tasks + beat schedule
         └── db/
             ├── database.py      ← Async engine + session + get_db dependency
             └── migrations/
-                └── versions/    ← 001_initial_schema, 002_discovery_tables
+                └── versions/    ← 001_initial_schema, 002_discovery_tables,
+                                    003_position_tables
 ```
 
 ---
@@ -192,24 +213,51 @@ Every 30m Regime detection
 - [x] React app loads at `localhost:5173`
 - [x] Watchlist sidebar renders signal list
 - [x] Clicking a stock shows chart + technical/sentiment tabs
-- [ ] WebSocket live-updates signal feed (deferred to Phase 4)
+- [ ] WebSocket live-updates signal feed (signals refresh on demand; live push not yet wired)
 
 **Phase 3 — DONE:**
 - [x] `POST /api/discovery/scan` triggers screener, top 30 results in DB
 - [x] `POST /api/discovery/watchlist` calls Claude API (or fallback), 12 picks with reasoning in DB
-- [x] `POST /api/discovery/seed` seeds ~93 stocks (S&P 500, NASDAQ 100, TSX)
-- [ ] Discovery tab in frontend shows screener heatmap + AI picks (frontend wiring deferred)
+- [x] `POST /api/discovery/seed` seeds ~830 stocks (S&P 500, NASDAQ 100, TSX)
+- [x] Discovery tab in frontend — ScreenerTable (6-dimension score bars) + WatchlistGrid (AI picks with reasoning)
 
-**Phase 4 done when:**
-- [ ] Trade entry form opens a position
-- [ ] Position monitor fires exit alerts (stop/target/reversal/sentiment/EOD)
-- [ ] Alerts appear in WebSocket feed in UI
-- [ ] Closing a position records outcome
+**Phase 4 — DONE:**
+- [x] Trade entry form opens a position (TradeEntryForm → POST /api/positions)
+- [x] Position monitor fires exit alerts (5 strategies: stop/target/reversal/sentiment/EOD)
+- [x] Alerts appear in WebSocket feed in UI (AlertFeed + useWebSocket, auto-switches tab on CRITICAL)
+- [x] Closing a position records outcome (ClosePositionModal → PUT /api/positions/{id}/close)
 
 **Phase 5 — DONE:**
 - [x] Layer 1 updates parameters after each closed trade (OnlineOptimizer)
 - [x] Layer 2 detects and logs regime changes (AdaptiveRegimeDetector + 5 presets)
 - [x] Layer 3 meta-review produces readable report (MetaAnalyst + Claude API fallback)
+
+**Phase 6 — DONE:**
+- [x] Celery beat schedule runs full daily pipeline
+- [x] Resend email notifications (watchlist, meta-review, critical alerts)
+- [x] Docker Compose with all services (db, redis, backend, frontend, celery worker + beat)
+- [x] 1,359 lines of tests across 6 files (indicators, analyzer, exit strategies, position manager, adaptation)
+- [x] Cold-start scripts (`seed_universe.py`, `seed_historical.py`)
+
+**Phase 7 — TODO:**
+- [ ] `GET /api/adaptation/log` — expose parameter snapshot history
+- [ ] `GET /api/adaptation/parameters` — current optimized parameter values
+- [ ] `GET /api/performance/daily` — daily P&L, win rate, Sharpe ratio
+- [ ] AdaptationPanel frontend — parameter drift chart, meta-review text
+- [ ] PerformancePanel frontend — equity curve, trade metrics dashboard
+- [ ] WebSocket live signal push — broadcast new signals after each scan cycle
+
+---
+
+## Known Gaps / Future Work
+
+| Item | Notes |
+|---|---|
+| Real market data | `data_provider.py` stubs Polygon.io/Finnhub; `USE_SIMULATED_DATA=true` for now |
+| Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
+| Adaptation/Performance UI | Backend models exist (`ParameterSnapshot`, `MetaReview`, `DailyPerformance`); no API routes or frontend yet |
+| WebSocket signal feed | Signals tab refreshes on demand; not pushed live over WebSocket |
+| Real sentiment/fundamentals | Both return simulated data; real API integration deferred |
 
 ---
 
@@ -254,7 +302,7 @@ Or use Docker for everything: `.\run.ps1 dev`
 ```powershell
 .\run.ps1 dev             # Start everything via Docker Compose
 .\run.ps1 cold-start      # migrate + seed-universe + seed (first time)
-.\run.ps1 test            # Run all 104 backend tests
+.\run.ps1 test            # Run all backend tests
 .\run.ps1 migrate         # Run Alembic migrations
 .\run.ps1 seed-universe   # Load S&P 500, NASDAQ 100, TSX stocks
 .\run.ps1 seed            # Generate simulated historical data
