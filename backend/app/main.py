@@ -16,6 +16,8 @@ from app.api.regime import router as regime_router
 from app.api.discovery import router as discovery_router
 from app.api.positions import router as positions_router
 from app.api.websocket import router as websocket_router
+from app.api.adaptation import router as adaptation_router
+from app.api.performance import router as performance_router
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,8 @@ app.include_router(regime_router)
 app.include_router(discovery_router)
 app.include_router(positions_router)
 app.include_router(websocket_router)
+app.include_router(adaptation_router)
+app.include_router(performance_router)
 
 
 @app.get("/")

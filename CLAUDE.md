@@ -239,10 +239,15 @@ Every 30m Regime detection
 - [x] 1,359 lines of tests across 6 files (indicators, analyzer, exit strategies, position manager, adaptation)
 - [x] Cold-start scripts (`seed_universe.py`, `seed_historical.py`)
 
-**Phase 7 — TODO:**
-- [ ] `GET /api/adaptation/log` — expose parameter snapshot history
-- [ ] `GET /api/adaptation/parameters` — current optimized parameter values
-- [ ] `GET /api/performance/daily` — daily P&L, win rate, Sharpe ratio
+**Phase 7 — IN PROGRESS:**
+- [x] `GET /api/adaptation/parameters` — current optimised parameter values
+- [x] `GET /api/adaptation/log` — parameter snapshot history (limit, most recent first)
+- [x] `GET /api/adaptation/reviews` — meta-review history
+- [x] `GET /api/adaptation/reviews/latest` — most recent meta-review
+- [x] `POST /api/adaptation/review` — manually trigger Layer 3 Claude meta-review
+- [x] `GET /api/performance/daily` — daily performance history (days param)
+- [x] `GET /api/performance/daily/today` — today's performance record
+- [x] `GET /api/performance/summary` — aggregate win rate, cumulative return, best/worst day
 - [ ] AdaptationPanel frontend — parameter drift chart, meta-review text
 - [ ] PerformancePanel frontend — equity curve, trade metrics dashboard
 - [ ] WebSocket live signal push — broadcast new signals after each scan cycle
@@ -255,7 +260,7 @@ Every 30m Regime detection
 |---|---|
 | Real market data | `data_provider.py` stubs Polygon.io/Finnhub; `USE_SIMULATED_DATA=true` for now |
 | Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
-| Adaptation/Performance UI | Backend models exist (`ParameterSnapshot`, `MetaReview`, `DailyPerformance`); no API routes or frontend yet |
+| Adaptation/Performance UI | API routes done; frontend panels (parameter drift chart, equity curve) still TODO |
 | WebSocket signal feed | Signals tab refreshes on demand; not pushed live over WebSocket |
 | Real sentiment/fundamentals | Both return simulated data; real API integration deferred |
 
