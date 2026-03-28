@@ -57,13 +57,18 @@ class SimulatedDataProvider(DataProvider):
 
     # Realistic base prices for common symbols
     SYMBOL_BASES: dict[str, float] = {
+        # US stocks (USD)
         "AAPL": 190.0, "MSFT": 420.0, "GOOGL": 175.0, "AMZN": 185.0,
         "NVDA": 920.0, "META": 500.0, "TSLA": 250.0, "AMD": 160.0,
         "NFLX": 620.0, "JPM": 195.0, "V": 280.0, "UNH": 520.0,
         "HD": 370.0, "DIS": 110.0, "PYPL": 65.0, "INTC": 32.0,
         "BA": 180.0, "CRM": 270.0, "COST": 730.0, "PEP": 170.0,
-        "SHOP": 95.0, "TD": 78.0, "RY": 130.0, "ENB": 48.0,
-        "BMO": 120.0, "BNS": 65.0, "CP": 110.0, "CNR": 160.0,
+        # TSX stocks (CAD) — .TO suffix
+        "SHOP.TO": 130.0, "TD.TO": 78.0, "RY.TO": 130.0, "ENB.TO": 48.0,
+        "BMO.TO": 120.0, "BNS.TO": 65.0, "CP.TO": 110.0, "CNR.TO": 160.0,
+        "CM.TO": 65.0, "MFC.TO": 40.0, "SU.TO": 52.0, "CNQ.TO": 45.0,
+        "ABX.TO": 22.0, "BCE.TO": 46.0, "TRP.TO": 52.0, "ATD.TO": 80.0,
+        "WCN.TO": 185.0, "FTS.TO": 55.0, "L.TO": 175.0, "MG.TO": 55.0,
     }
 
     def __init__(self):
@@ -230,11 +235,20 @@ class SimulatedDataProvider(DataProvider):
 
 def get_data_provider() -> DataProvider:
     """
-    Factory — returns simulated or real provider based on config.
-    Real providers will be added in Phase 3.
-    """
-    if settings.use_simulated_data:
-        return SimulatedDataProvider()
+    Factory — returns the best available provider:
+      1. Polygon.io  (if POLYGON_API_KEY set and USE_SIMULATED_DATA=false)
+      2. Finnhub     (if FINNHUB_API_KEY set and USE_SIMULATED_DATA=false)
+      3. Simulated   (fallback / USE_SIMULATED_DATA=true)
 
-    # TODO: Phase 3 — return PolygonDataProvider() or FinnhubDataProvider()
+    TSX symbols use the .TO suffix (e.g. TD.TO) — supported by both Finnhub
+    and Polygon. Simulated provider also maps .TO symbols to realistic CAD prices.
+    """
+    if not settings.use_simulated_data:
+        if settings.polygon_api_key:
+            from app.engine.polygon_provider import PolygonDataProvider
+            return PolygonDataProvider(settings.polygon_api_key)
+        if settings.finnhub_api_key:
+            from app.engine.finnhub_provider import FinnhubDataProvider
+            return FinnhubDataProvider(settings.finnhub_api_key)
+
     return SimulatedDataProvider()
