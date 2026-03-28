@@ -5,12 +5,13 @@ import { DetailPanel } from './components/layout/DetailPanel';
 import { PositionsPanel } from './components/positions/PositionsPanel';
 import { AlertFeed } from './components/alerts/AlertFeed';
 import { DiscoveryPanel } from './components/discovery/DiscoveryPanel';
+import { InsightsPanel } from './components/insights/InsightsPanel';
 import { useSignals } from './hooks/useSignals';
 import { useRegime } from './hooks/useRegime';
 import { usePositions } from './hooks/usePositions';
 import { useWebSocket } from './hooks/useWebSocket';
 
-type MainTab = 'signals' | 'positions' | 'alerts' | 'discovery';
+type MainTab = 'signals' | 'positions' | 'alerts' | 'discovery' | 'insights';
 
 function App() {
   const { signals, loading, error, refresh: refreshSignals } = useSignals();
@@ -79,6 +80,9 @@ function App() {
         <MainTabButton id="discovery" active={mainTab === 'discovery'} onClick={setMainTab}>
           Discovery
         </MainTabButton>
+        <MainTabButton id="insights" active={mainTab === 'insights'} onClick={setMainTab}>
+          Insights
+        </MainTabButton>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -140,6 +144,12 @@ function App() {
         {mainTab === 'discovery' && (
           <div className="flex-1 overflow-hidden">
             <DiscoveryPanel />
+          </div>
+        )}
+
+        {mainTab === 'insights' && (
+          <div className="flex-1 overflow-hidden">
+            <InsightsPanel />
           </div>
         )}
       </div>

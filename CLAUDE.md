@@ -248,8 +248,8 @@ Every 30m Regime detection
 - [x] `GET /api/performance/daily` — daily performance history (days param)
 - [x] `GET /api/performance/daily/today` — today's performance record
 - [x] `GET /api/performance/summary` — aggregate win rate, cumulative return, best/worst day
-- [ ] AdaptationPanel frontend — parameter drift chart, meta-review text
-- [ ] PerformancePanel frontend — equity curve, trade metrics dashboard
+- [x] AdaptationPanel frontend — current parameters, parameter drift chart, meta-review history (collapsible cards)
+- [x] PerformancePanel frontend — equity curve, summary stats, daily table, 7/30/90d window picker
 - [ ] WebSocket live signal push — broadcast new signals after each scan cycle
 
 ---
@@ -260,7 +260,7 @@ Every 30m Regime detection
 |---|---|
 | Real market data | `data_provider.py` stubs Polygon.io/Finnhub; `USE_SIMULATED_DATA=true` for now |
 | Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
-| Adaptation/Performance UI | API routes done; frontend panels (parameter drift chart, equity curve) still TODO |
+| Adaptation/Performance UI | Done — Insights tab with Performance (equity curve, daily table) + Adaptation (parameter drift, meta-reviews) |
 | WebSocket signal feed | Signals tab refreshes on demand; not pushed live over WebSocket |
 | Real sentiment/fundamentals | Both return simulated data; real API integration deferred |
 

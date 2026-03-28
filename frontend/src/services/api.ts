@@ -7,6 +7,12 @@ import type {
   CloseInput,
 } from '../types/positions';
 import type { ScreenerResponse, WatchlistResponse } from '../types/discovery';
+import type {
+  ParameterSnapshot,
+  MetaReview,
+  DailyPerformance,
+  PerformanceSummary,
+} from '../types/adaptation';
 
 const BASE_URL = '/api';
 
@@ -100,4 +106,36 @@ export function triggerScan(): Promise<unknown> {
 
 export function triggerWatchlistBuild(): Promise<unknown> {
   return postJSON<unknown>('/discovery/watchlist', {});
+}
+
+// --- Adaptation ---
+
+export function fetchCurrentParameters(): Promise<ParameterSnapshot> {
+  return fetchJSON<ParameterSnapshot>('/adaptation/parameters');
+}
+
+export function fetchParameterLog(limit = 50): Promise<ParameterSnapshot[]> {
+  return fetchJSON<ParameterSnapshot[]>(`/adaptation/log?limit=${limit}`);
+}
+
+export function fetchMetaReviews(limit = 30): Promise<MetaReview[]> {
+  return fetchJSON<MetaReview[]>(`/adaptation/reviews?limit=${limit}`);
+}
+
+export function fetchLatestMetaReview(): Promise<MetaReview | null> {
+  return fetchJSON<MetaReview | null>('/adaptation/reviews/latest');
+}
+
+export function triggerMetaReview(): Promise<unknown> {
+  return postJSON<unknown>('/adaptation/review', {});
+}
+
+// --- Performance ---
+
+export function fetchDailyPerformance(days = 30): Promise<DailyPerformance[]> {
+  return fetchJSON<DailyPerformance[]>(`/performance/daily?days=${days}`);
+}
+
+export function fetchPerformanceSummary(days = 30): Promise<PerformanceSummary> {
+  return fetchJSON<PerformanceSummary>(`/performance/summary?days=${days}`);
 }
