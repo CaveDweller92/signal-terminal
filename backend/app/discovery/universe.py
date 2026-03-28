@@ -138,10 +138,12 @@ async def _fetch_finnhub_symbols(exchange: str, api_key: str) -> list[dict]:
             resp = await client.get(url)
             resp.raise_for_status()
             data = resp.json()
-        # Filter to common stocks only — exclude ETFs, warrants, rights, etc.
+        # NYSE and NASDAQ common stocks only.
+        # OTC/pink sheet stocks return 403 on Finnhub free tier candle endpoints.
         return [
             s for s in data
             if s.get("type") in ("Common Stock", "EQS")
+            and s.get("mic") in ("XNYS", "XNAS")
         ]
     except Exception as e:
         logger.error(f"Finnhub symbol fetch failed for exchange={exchange}: {e}")
