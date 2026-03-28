@@ -64,6 +64,10 @@ case "$1" in
     ;;
   cold-start)
     _require_venv
+    echo -e "${CYAN}=== Starting database + Redis ===${RESET}"
+    docker compose up db redis -d
+    echo "Waiting for PostgreSQL to be ready..."
+    sleep 5
     echo -e "${CYAN}=== Running migrations ===${RESET}"
     (cd backend && ../"$PYTHON" -m alembic upgrade head)
     echo -e "${CYAN}=== Seeding universe ===${RESET}"
