@@ -1,5 +1,9 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import Field
+
+# .env lives at the project root (one level above backend/)
+_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -37,7 +41,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"])
 
     model_config = {
-        "env_file": ".env",
+        "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
     }
