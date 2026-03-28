@@ -125,12 +125,13 @@ async def _fetch_finnhub_symbols(exchange: str, api_key: str) -> list[dict]:
     """
     Fetch all common stocks for an exchange from Finnhub.
 
-    exchange: "US" for NYSE/NASDAQ, "TO" for TSX
+    exchange: "US" for NYSE/NASDAQ
     Returns list of {symbol, description, type} dicts.
+    Follows redirects (Finnhub returns 302 to a static CDN file).
     """
     url = f"https://finnhub.io/api/v1/stock/symbol?exchange={exchange}&token={api_key}"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             data = resp.json()
@@ -178,41 +179,31 @@ async def seed_universe(db: AsyncSession) -> dict:
 
 
 async def _seed_from_finnhub(db: AsyncSession) -> dict:
-    logger.info("Seeding universe from Finnhub...")
-    counts = {"sp500_nasdaq": 0, "tsx": 0}
+    logger.info("Seeding universe from Finnhub (US) + hardcoded TSX...")
+    counts = {"us": 0, "tsx": 0}
 
-    # US stocks (NYSE + NASDAQ combined — Finnhub exchange=US covers both)
+    # US stocks — Finnhub free tier supports exchange=US
     us_symbols = await _fetch_finnhub_symbols("US", settings.finnhub_api_key)
     logger.info(f"Finnhub returned {len(us_symbols)} US common stocks")
 
     for s in us_symbols:
         db.add(StockUniverse(
-            symbol=s["symbol"],
+            symbol=s["symbol"][:10],
             name=(s.get("description") or s["symbol"])[:200],
             exchange=s.get("mic", "US")[:20],
-            universe="sp500",  # treat all US as sp500 bucket for screener
+            universe="sp500",
             country="US",
             currency="USD",
             last_updated=datetime.utcnow(),
         ))
-        counts["sp500_nasdaq"] += 1
+        counts["us"] += 1
 
-    # TSX stocks (exchange=TO)
-    tsx_symbols = await _fetch_finnhub_symbols("TO", settings.finnhub_api_key)
-    logger.info(f"Finnhub returned {len(tsx_symbols)} TSX common stocks")
-
-    for s in tsx_symbols:
-        # Finnhub returns TSX symbols without .TO — add it for consistency
-        symbol = s["symbol"]
-        if not symbol.endswith(".TO"):
-            symbol = f"{symbol}.TO"
+    # TSX — exchange=TO requires Finnhub paid plan; use hardcoded list
+    for stock in TSX_STOCKS:
+        symbol, name, exchange, universe, sector, industry, country, currency = stock
         db.add(StockUniverse(
-            symbol=symbol[:10],
-            name=(s.get("description") or symbol)[:200],
-            exchange="TSX",
-            universe="tsx",
-            country="CA",
-            currency="CAD",
+            symbol=symbol, name=name, exchange=exchange, universe=universe,
+            sector=sector, industry=industry, country=country, currency=currency,
             last_updated=datetime.utcnow(),
         ))
         counts["tsx"] += 1
