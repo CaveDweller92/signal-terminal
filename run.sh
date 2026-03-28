@@ -15,29 +15,29 @@ case "$1" in
   logs)          docker compose logs -f backend celery-worker ;;
 
   # Database
-  migrate)       cd backend && python -m alembic upgrade head ;;
+  migrate)       cd backend && python3 -m alembic upgrade head ;;
 
   # Testing
-  test)          cd backend && python -m pytest tests/ -v ;;
-  test-cov)      cd backend && python -m pytest tests/ -v --cov=app --cov-report=term-missing ;;
+  test)          cd backend && python3 -m pytest tests/ -v ;;
+  test-cov)      cd backend && python3 -m pytest tests/ -v --cov=app --cov-report=term-missing ;;
 
   # Cold Start
-  seed-universe) cd backend && python scripts/seed_universe.py ;;
-  seed)          cd backend && python scripts/seed_historical.py ;;
+  seed-universe) cd backend && python3 scripts/seed_universe.py ;;
+  seed)          cd backend && python3 scripts/seed_historical.py ;;
   cold-start)
     echo -e "${CYAN}=== Running migrations ===${RESET}"
-    (cd backend && python -m alembic upgrade head)
+    (cd backend && python3 -m alembic upgrade head)
     echo -e "${CYAN}=== Seeding universe ===${RESET}"
-    (cd backend && python scripts/seed_universe.py)
+    (cd backend && python3 scripts/seed_universe.py)
     echo -e "${CYAN}=== Seeding historical data ===${RESET}"
-    (cd backend && python scripts/seed_historical.py)
+    (cd backend && python3 scripts/seed_historical.py)
     echo -e "${GREEN}=== Cold start complete ===${RESET}"
     ;;
 
   # Manual Triggers
-  scan)          cd backend && python -c "from app.tasks.premarket_scan import run_scan; run_scan()" ;;
-  watchlist)     cd backend && python -c "from app.tasks.watchlist_build import build_daily_watchlist; build_daily_watchlist()" ;;
-  review)        cd backend && python -c "from app.tasks.daily_meta_review import run_daily_meta_review; run_daily_meta_review()" ;;
+  scan)          cd backend && python3 -c "from app.tasks.premarket_scan import run_scan; run_scan()" ;;
+  watchlist)     cd backend && python3 -c "from app.tasks.watchlist_build import build_daily_watchlist; build_daily_watchlist()" ;;
+  review)        cd backend && python3 -c "from app.tasks.daily_meta_review import run_daily_meta_review; run_daily_meta_review()" ;;
 
   *)
     echo -e "${CYAN}Signal Terminal — Available commands:${RESET}"
