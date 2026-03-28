@@ -1,19 +1,21 @@
 """
 Universe Manager — maintains the master list of tradable stocks.
 
-When FINNHUB_API_KEY is configured:
-  - Fetches full US symbol list from Finnhub (/stock/symbol?exchange=US)
-  - Fetches full TSX symbol list from Finnhub (/stock/symbol?exchange=TO)
-  - Filters to common stocks only (type=Common Stock)
+US stocks:
+  - Fetched from Finnhub (/stock/symbol?exchange=US) when API key is set
+  - Falls back to hardcoded ~60 stocks otherwise
 
-Fallback (no API key / USE_SIMULATED_DATA=true):
-  - Uses the hardcoded representative subset below (~95 stocks)
+TSX 60:
+  - Fetched dynamically from Wikipedia (S&P/TSX 60 page) via pandas.read_html
+  - Falls back to hardcoded list if Wikipedia is unreachable
 """
 
+import io
 import logging
 from datetime import datetime
 
 import httpx
+import pandas as pd
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,27 +95,28 @@ NASDAQ100_STOCKS = [
     ("ARM", "Arm Holdings plc", "NASDAQ", "nasdaq100", "Technology", "Semiconductors", "US", "USD"),
 ]
 
-TSX_STOCKS = [
-    ("RY.TO", "Royal Bank of Canada", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
-    ("TD.TO", "Toronto-Dominion Bank", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
-    ("BNS.TO", "Bank of Nova Scotia", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
-    ("BMO.TO", "Bank of Montreal", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
-    ("CM.TO", "Canadian Imperial Bank", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
-    ("ENB.TO", "Enbridge Inc.", "TSX", "tsx", "Energy", "Oil & Gas Midstream", "CA", "CAD"),
-    ("CNR.TO", "Canadian National Railway", "TSX", "tsx", "Industrials", "Railroads", "CA", "CAD"),
-    ("CP.TO", "Canadian Pacific Kansas City", "TSX", "tsx", "Industrials", "Railroads", "CA", "CAD"),
-    ("SHOP.TO", "Shopify Inc.", "TSX", "tsx", "Technology", "Software", "CA", "CAD"),
-    ("BCE.TO", "BCE Inc.", "TSX", "tsx", "Communication Services", "Telecom", "CA", "CAD"),
-    ("TRP.TO", "TC Energy Corporation", "TSX", "tsx", "Energy", "Oil & Gas Midstream", "CA", "CAD"),
-    ("SU.TO", "Suncor Energy Inc.", "TSX", "tsx", "Energy", "Oil & Gas", "CA", "CAD"),
-    ("CNQ.TO", "Canadian Natural Resources", "TSX", "tsx", "Energy", "Oil & Gas", "CA", "CAD"),
-    ("MFC.TO", "Manulife Financial", "TSX", "tsx", "Financial Services", "Insurance", "CA", "CAD"),
-    ("ABX.TO", "Barrick Gold Corporation", "TSX", "tsx", "Materials", "Gold", "CA", "CAD"),
-    ("ATD.TO", "Alimentation Couche-Tard", "TSX", "tsx", "Consumer Defensive", "Grocery", "CA", "CAD"),
-    ("WCN.TO", "Waste Connections Inc.", "TSX", "tsx", "Industrials", "Waste Management", "CA", "CAD"),
-    ("FTS.TO", "Fortis Inc.", "TSX", "tsx", "Utilities", "Utilities", "CA", "CAD"),
-    ("L.TO", "Loblaw Companies", "TSX", "tsx", "Consumer Defensive", "Grocery", "CA", "CAD"),
-    ("MG.TO", "Magna International", "TSX", "tsx", "Consumer Cyclical", "Auto Parts", "CA", "CAD"),
+# Fallback TSX list — used only if Wikipedia is unreachable
+TSX_STOCKS_FALLBACK = [
+    ("RY.TO",   "Royal Bank of Canada",        "TSX", "tsx", "Financial Services",     "Banks",               "CA", "CAD"),
+    ("TD.TO",   "Toronto-Dominion Bank",        "TSX", "tsx", "Financial Services",     "Banks",               "CA", "CAD"),
+    ("BNS.TO",  "Bank of Nova Scotia",          "TSX", "tsx", "Financial Services",     "Banks",               "CA", "CAD"),
+    ("BMO.TO",  "Bank of Montreal",             "TSX", "tsx", "Financial Services",     "Banks",               "CA", "CAD"),
+    ("CM.TO",   "Canadian Imperial Bank",       "TSX", "tsx", "Financial Services",     "Banks",               "CA", "CAD"),
+    ("ENB.TO",  "Enbridge Inc.",                "TSX", "tsx", "Energy",                 "Oil & Gas Midstream", "CA", "CAD"),
+    ("CNR.TO",  "Canadian National Railway",    "TSX", "tsx", "Industrials",            "Railroads",           "CA", "CAD"),
+    ("CP.TO",   "Canadian Pacific Kansas City", "TSX", "tsx", "Industrials",            "Railroads",           "CA", "CAD"),
+    ("SHOP.TO", "Shopify Inc.",                 "TSX", "tsx", "Technology",             "Software",            "CA", "CAD"),
+    ("BCE.TO",  "BCE Inc.",                     "TSX", "tsx", "Communication Services", "Telecom",             "CA", "CAD"),
+    ("TRP.TO",  "TC Energy Corporation",        "TSX", "tsx", "Energy",                 "Oil & Gas Midstream", "CA", "CAD"),
+    ("SU.TO",   "Suncor Energy Inc.",           "TSX", "tsx", "Energy",                 "Oil & Gas",           "CA", "CAD"),
+    ("CNQ.TO",  "Canadian Natural Resources",   "TSX", "tsx", "Energy",                 "Oil & Gas",           "CA", "CAD"),
+    ("MFC.TO",  "Manulife Financial",           "TSX", "tsx", "Financial Services",     "Insurance",           "CA", "CAD"),
+    ("ABX.TO",  "Barrick Gold Corporation",     "TSX", "tsx", "Materials",              "Gold",                "CA", "CAD"),
+    ("ATD.TO",  "Alimentation Couche-Tard",     "TSX", "tsx", "Consumer Defensive",     "Grocery",             "CA", "CAD"),
+    ("WCN.TO",  "Waste Connections Inc.",       "TSX", "tsx", "Industrials",            "Waste Management",    "CA", "CAD"),
+    ("FTS.TO",  "Fortis Inc.",                  "TSX", "tsx", "Utilities",              "Utilities",           "CA", "CAD"),
+    ("L.TO",    "Loblaw Companies",             "TSX", "tsx", "Consumer Defensive",     "Grocery",             "CA", "CAD"),
+    ("MG.TO",   "Magna International",          "TSX", "tsx", "Consumer Cyclical",      "Auto Parts",          "CA", "CAD"),
 ]
 
 
@@ -145,11 +148,54 @@ async def _fetch_finnhub_symbols(exchange: str, api_key: str) -> list[dict]:
         return []
 
 
-def _map_finnhub_symbol(s: dict, universe: str, exchange: str,
-                         country: str, currency: str) -> tuple:
-    symbol = s["symbol"]
-    name = s.get("description") or symbol
-    return (symbol, name, exchange, universe, None, None, country, currency)
+async def _fetch_tsx60_from_wiki() -> list[tuple]:
+    """
+    Fetch the S&P/TSX 60 constituent list from Wikipedia.
+    Returns list of (symbol_with_TO, name) tuples.
+    Falls back to TSX_STOCKS_FALLBACK if Wikipedia is unreachable.
+    """
+    url = "https://en.wikipedia.org/wiki/S%26P/TSX_60"
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; signal-terminal/1.0)"}
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            html = resp.text
+
+        tables = pd.read_html(io.StringIO(html), flavor="lxml")
+        # Find the table that has a ticker/symbol column
+        df = None
+        for t in tables:
+            cols = [str(c).lower() for c in t.columns]
+            if any("ticker" in c or "symbol" in c for c in cols):
+                df = t
+                break
+
+        if df is None:
+            logger.warning("TSX 60 Wikipedia: could not find ticker table, using fallback")
+            return TSX_STOCKS_FALLBACK
+
+        # Normalise column names
+        df.columns = [str(c).lower().strip() for c in df.columns]
+        ticker_col = next(c for c in df.columns if "ticker" in c or "symbol" in c)
+        name_col = next((c for c in df.columns if "company" in c or "name" in c), None)
+
+        results = []
+        for _, row in df.iterrows():
+            symbol = str(row[ticker_col]).strip()
+            name = str(row[name_col]).strip() if name_col else symbol
+            if not symbol or symbol == "nan":
+                continue
+            if not symbol.endswith(".TO"):
+                symbol = f"{symbol}.TO"
+            results.append((symbol, name))
+
+        logger.info(f"Wikipedia TSX 60: fetched {len(results)} symbols")
+        return results
+
+    except Exception as e:
+        logger.warning(f"TSX 60 Wikipedia fetch failed ({e}), using fallback list")
+        return TSX_STOCKS_FALLBACK
 
 
 # ---------------------------------------------------------------------------
@@ -198,11 +244,18 @@ async def _seed_from_finnhub(db: AsyncSession) -> dict:
         ))
         counts["us"] += 1
 
-    # TSX — exchange=TO requires Finnhub paid plan; use hardcoded list
-    for stock in TSX_STOCKS:
-        symbol, name, exchange, universe, sector, industry, country, currency = stock
+    # TSX — fetch from Wikipedia (exchange=TO requires Finnhub paid plan)
+    tsx_wiki = await _fetch_tsx60_from_wiki()
+    for item in tsx_wiki:
+        if isinstance(item, tuple) and len(item) == 8:
+            # fallback tuple format
+            symbol, name, exchange, universe, sector, industry, country, currency = item
+        else:
+            # wiki format: (symbol, name)
+            symbol, name = item
+            exchange, universe, sector, industry, country, currency = "TSX", "tsx", None, None, "CA", "CAD"
         db.add(StockUniverse(
-            symbol=symbol, name=name, exchange=exchange, universe=universe,
+            symbol=symbol[:10], name=name[:200], exchange=exchange, universe=universe,
             sector=sector, industry=industry, country=country, currency=currency,
             last_updated=datetime.utcnow(),
         ))
@@ -219,7 +272,7 @@ async def _seed_from_hardcoded(db: AsyncSession) -> dict:
     all_stocks = (
         [(s, "sp500") for s in SP500_STOCKS]
         + [(s, "nasdaq100") for s in NASDAQ100_STOCKS]
-        + [(s, "tsx") for s in TSX_STOCKS]
+        + [(s, "tsx") for s in TSX_STOCKS_FALLBACK]
     )
 
     for stock, _ in all_stocks:
