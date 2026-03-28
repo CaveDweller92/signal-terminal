@@ -89,10 +89,14 @@ services:
     container_name: signal-terminal-frontend
     ports:
       - "5173:5173"
+    environment:
+      BACKEND_HOST: backend
     volumes:
       - ./frontend:/app
       - /app/node_modules
     command: npm run dev -- --host
+    depends_on:
+      - backend
 
 volumes:
   pgdata:
