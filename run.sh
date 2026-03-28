@@ -14,6 +14,9 @@ case "$1" in
   down)          docker compose down ;;
   logs)          docker compose logs -f backend celery-worker ;;
 
+  # Setup
+  install)       cd backend && pip3 install -r requirements.txt ;;
+
   # Database
   migrate)       cd backend && python3 -m alembic upgrade head ;;
 
@@ -47,6 +50,9 @@ case "$1" in
     echo "    ./run.sh up              # Start in background"
     echo "    ./run.sh down            # Stop all containers"
     echo "    ./run.sh logs            # Tail backend + celery logs"
+    echo ""
+    echo -e "${YELLOW}  Setup:${RESET}"
+    echo "    ./run.sh install         # pip install backend dependencies"
     echo ""
     echo -e "${YELLOW}  Database:${RESET}"
     echo "    ./run.sh migrate         # Run Alembic migrations"
