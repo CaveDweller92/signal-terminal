@@ -103,4 +103,11 @@ export interface WsAck {
   received: string;
 }
 
-export type WsMessage = WsExitAlert | WsPositionUpdate | WsAck;
+export interface WsSignalUpdate {
+  type: 'signal_update';
+  signals: import('./market').Signal[];
+  count: number;
+  timestamp: string;
+}
+
+export type WsMessage = WsExitAlert | WsPositionUpdate | WsAck | WsSignalUpdate;

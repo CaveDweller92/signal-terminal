@@ -14,10 +14,10 @@ import { useWebSocket } from './hooks/useWebSocket';
 type MainTab = 'signals' | 'positions' | 'alerts' | 'discovery' | 'insights';
 
 function App() {
-  const { signals, loading, error, refresh: refreshSignals } = useSignals();
+  const { signals, loading, error, refresh: refreshSignals, applyLiveUpdate } = useSignals();
   const { regime, refresh: refreshRegime } = useRegime();
   const { positions, loading: posLoading, refresh: refreshPositions, addPosition, closePos, updatePosition } = usePositions();
-  const { connected, alerts, clearAlerts, onPositionUpdate } = useWebSocket();
+  const { connected, alerts, clearAlerts, onPositionUpdate, onSignalUpdate } = useWebSocket();
 
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>('signals');
@@ -35,6 +35,11 @@ function App() {
       }
     });
   }, [onPositionUpdate, updatePosition]);
+
+  // Route WebSocket signal_update messages to the signals state
+  useEffect(() => {
+    onSignalUpdate(applyLiveUpdate);
+  }, [onSignalUpdate, applyLiveUpdate]);
 
   // Switch to alerts tab automatically when a critical alert arrives
   useEffect(() => {

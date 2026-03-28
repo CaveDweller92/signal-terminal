@@ -1,0 +1,109 @@
+"""
+Live Scanner — background coroutine that runs inside the FastAPI process.
+
+Two loops:
+  - Every 30 seconds: check all open positions for exit signals, broadcast via WS
+  - Every 5 minutes during market hours: re-analyze the watchlist, broadcast via WS
+
+Runs as an asyncio.Task started in main.py startup_event.
+Uses the ws_manager singleton directly (no Celery/pub-sub needed).
+"""
+
+import asyncio
+import logging
+from datetime import datetime, time
+
+from app.api.websocket import ws_manager
+from app.api.signals import DEFAULT_SYMBOLS
+from app.db.database import async_session
+from app.engine.analyzer import SignalAnalyzer
+from app.engine.data_provider import get_data_provider
+from app.positions.monitor import PositionMonitor
+
+logger = logging.getLogger(__name__)
+
+# Market hours (Eastern — server must run with TZ=America/New_York or UTC is fine for simulation)
+_MARKET_OPEN = time(9, 30)
+_MARKET_CLOSE = time(16, 15)
+
+# Intervals
+_POSITION_CHECK_INTERVAL = 30      # seconds
+_SIGNAL_SCAN_INTERVAL = 5 * 60    # seconds (5 minutes)
+
+
+def _is_market_hours() -> bool:
+    """True during approximate market hours (Mon–Fri, 9:30–16:15 ET)."""
+    now = datetime.now()
+    if now.weekday() >= 5:  # Saturday / Sunday
+        return False
+    t = now.time()
+    return _MARKET_OPEN <= t <= _MARKET_CLOSE
+
+
+async def _scan_signals() -> None:
+    """Analyze the watchlist and broadcast a signal_update message."""
+    try:
+        provider = get_data_provider()
+        analyzer = SignalAnalyzer(provider)
+        results = []
+        for symbol in DEFAULT_SYMBOLS:
+            signal = await analyzer.analyze(symbol)
+            results.append(signal)
+        results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
+
+        await ws_manager.broadcast({
+            "type": "signal_update",
+            "signals": results,
+            "count": len(results),
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        logger.info(f"LiveScanner: broadcast {len(results)} signals")
+    except Exception as e:
+        logger.error(f"LiveScanner: signal scan error: {e}")
+
+
+async def _check_positions() -> None:
+    """Check all open positions and broadcast any exit alerts."""
+    try:
+        async with async_session() as session:
+            provider = get_data_provider()
+            monitor = PositionMonitor(session, provider)
+            alerts = await monitor.check_all_positions()
+            await session.commit()
+
+        for alert in alerts:
+            await ws_manager.broadcast(alert)
+
+        if alerts:
+            logger.info(f"LiveScanner: broadcast {len(alerts)} exit alert(s)")
+    except Exception as e:
+        logger.error(f"LiveScanner: position check error: {e}")
+
+
+async def run_live_scanner() -> None:
+    """
+    Main background loop. Runs forever until the task is cancelled.
+
+    Position checks run every 30 s.
+    Signal scans run every 5 min, but only during market hours.
+    """
+    logger.info("LiveScanner: started")
+    last_signal_scan = 0.0  # epoch seconds of last scan
+
+    while True:
+        try:
+            await asyncio.sleep(_POSITION_CHECK_INTERVAL)
+
+            await _check_positions()
+
+            now = asyncio.get_event_loop().time()
+            if _is_market_hours() and (now - last_signal_scan) >= _SIGNAL_SCAN_INTERVAL:
+                await _scan_signals()
+                last_signal_scan = now
+
+        except asyncio.CancelledError:
+            logger.info("LiveScanner: cancelled, shutting down")
+            break
+        except Exception as e:
+            logger.error(f"LiveScanner: unexpected error: {e}")
+            await asyncio.sleep(5)  # brief back-off before retrying

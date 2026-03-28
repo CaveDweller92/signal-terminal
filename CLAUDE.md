@@ -101,7 +101,8 @@ signal-terminal/
         │   ├── data_provider.py ← Simulated + real (strategy pattern)
         │   ├── regime.py        ← Heuristic regime detector
         │   ├── sentiment.py     ← Simulated sentiment
-        │   └── fundamentals.py  ← Simulated fundamentals
+        │   ├── fundamentals.py  ← Simulated fundamentals
+        │   └── live_scanner.py  ← Background loop: position checks (30s) + signal scans (5min)
         ├── discovery/           ← Stock discovery
         │   ├── universe.py      ← Seed + query ~830 stocks
         │   ├── screener.py      ← 6-dimension pre-market screener
@@ -213,7 +214,7 @@ Every 30m Regime detection
 - [x] React app loads at `localhost:5173`
 - [x] Watchlist sidebar renders signal list
 - [x] Clicking a stock shows chart + technical/sentiment tabs
-- [ ] WebSocket live-updates signal feed (signals refresh on demand; live push not yet wired)
+- [x] WebSocket live-updates signal feed (`signal_update` messages pushed every 5 min via live_scanner)
 
 **Phase 3 — DONE:**
 - [x] `POST /api/discovery/scan` triggers screener, top 30 results in DB
@@ -239,7 +240,7 @@ Every 30m Regime detection
 - [x] 1,359 lines of tests across 6 files (indicators, analyzer, exit strategies, position manager, adaptation)
 - [x] Cold-start scripts (`seed_universe.py`, `seed_historical.py`)
 
-**Phase 7 — IN PROGRESS:**
+**Phase 7 — DONE:**
 - [x] `GET /api/adaptation/parameters` — current optimised parameter values
 - [x] `GET /api/adaptation/log` — parameter snapshot history (limit, most recent first)
 - [x] `GET /api/adaptation/reviews` — meta-review history
@@ -250,7 +251,7 @@ Every 30m Regime detection
 - [x] `GET /api/performance/summary` — aggregate win rate, cumulative return, best/worst day
 - [x] AdaptationPanel frontend — current parameters, parameter drift chart, meta-review history (collapsible cards)
 - [x] PerformancePanel frontend — equity curve, summary stats, daily table, 7/30/90d window picker
-- [ ] WebSocket live signal push — broadcast new signals after each scan cycle
+- [x] WebSocket live signal push — live_scanner.py broadcasts signals (5 min) + position alerts (30 s)
 
 ---
 
@@ -261,7 +262,7 @@ Every 30m Regime detection
 | Real market data | `data_provider.py` stubs Polygon.io/Finnhub; `USE_SIMULATED_DATA=true` for now |
 | Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
 | Adaptation/Performance UI | Done — Insights tab with Performance (equity curve, daily table) + Adaptation (parameter drift, meta-reviews) |
-| WebSocket signal feed | Signals tab refreshes on demand; not pushed live over WebSocket |
+| WebSocket signal feed | live_scanner.py broadcasts every 5 min during market hours |
 | Real sentiment/fundamentals | Both return simulated data; real API integration deferred |
 
 ---

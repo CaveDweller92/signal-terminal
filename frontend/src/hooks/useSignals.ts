@@ -7,6 +7,7 @@ interface UseSignalsResult {
   loading: boolean;
   error: string | null;
   refresh: () => void;
+  applyLiveUpdate: (incoming: Signal[]) => void;
 }
 
 export function useSignals(): UseSignalsResult {
@@ -31,5 +32,10 @@ export function useSignals(): UseSignalsResult {
     load();
   }, [load]);
 
-  return { signals, loading, error, refresh: load };
+  // Merge a live push: update existing symbols in-place, preserve ordering by conviction.
+  const applyLiveUpdate = useCallback((incoming: Signal[]) => {
+    setSignals(incoming);
+  }, []);
+
+  return { signals, loading, error, refresh: load, applyLiveUpdate };
 }
