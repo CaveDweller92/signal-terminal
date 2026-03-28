@@ -82,9 +82,8 @@ case "$1" in
     (cd backend && ../"$PYTHON" -m alembic upgrade head)
     echo -e "${CYAN}=== Seeding universe ===${RESET}"
     (cd backend && ../"$PYTHON" scripts/seed_universe.py)
-    echo -e "${CYAN}=== Seeding historical data ===${RESET}"
-    (cd backend && ../"$PYTHON" scripts/seed_historical.py)
     echo -e "${GREEN}=== Cold start complete ===${RESET}"
+    echo "Tip: real signals will populate once the market opens and the live scanner runs."
     ;;
 
   # Manual Triggers
@@ -122,7 +121,7 @@ case "$1" in
     echo "    ./run.sh test-cov        # Run tests with coverage"
     echo ""
     echo -e "${YELLOW}  Cold Start:${RESET}"
-    echo "    ./run.sh cold-start      # migrate + seed-universe + seed"
+    echo "    ./run.sh cold-start      # migrate + seed-universe (no fake signals)"
     echo "    ./run.sh seed-universe   # Load stock universe"
     echo "    ./run.sh seed            # Generate historical signals"
     echo ""
