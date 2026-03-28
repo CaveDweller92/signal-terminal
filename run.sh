@@ -25,6 +25,16 @@ case "$1" in
   up)            docker compose up -d ;;
   down)          docker compose down ;;
   logs)          docker compose logs -f backend celery-worker ;;
+  reset-db)
+    echo -e "${CYAN}=== Resetting database (drops volume + recreates) ===${RESET}"
+    docker compose down -v
+    docker compose up db redis -d
+    echo "Waiting for PostgreSQL to be ready..."
+    sleep 5
+    _require_venv
+    (cd backend && ../"$PYTHON" -m alembic upgrade head)
+    echo -e "${GREEN}=== Database reset complete ===${RESET}"
+    ;;
 
   # Setup — creates venv + installs deps
   install)
@@ -99,6 +109,7 @@ case "$1" in
     echo "    ./run.sh up              # Start in background"
     echo "    ./run.sh down            # Stop all containers"
     echo "    ./run.sh logs            # Tail backend + celery logs"
+    echo "    ./run.sh reset-db        # Drop + recreate database (fresh slate)"
     echo ""
     echo -e "${YELLOW}  Setup:${RESET}"
     echo "    ./run.sh install         # Create venv + pip install dependencies"
