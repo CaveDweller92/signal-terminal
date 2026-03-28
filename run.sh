@@ -7,6 +7,18 @@ YELLOW='\033[0;33m'
 GREEN='\033[0;32m'
 RESET='\033[0m'
 
+VENV="backend/.venv"
+PYTHON="$VENV/bin/python"
+PIP="$VENV/bin/pip"
+
+# Ensure venv exists before running any Python command
+_require_venv() {
+  if [ ! -f "$PYTHON" ]; then
+    echo -e "${CYAN}No venv found — run ./run.sh install first${RESET}"
+    exit 1
+  fi
+}
+
 case "$1" in
   # Docker
   dev)           docker compose up --build ;;
@@ -14,33 +26,66 @@ case "$1" in
   down)          docker compose down ;;
   logs)          docker compose logs -f backend celery-worker ;;
 
-  # Setup
-  install)       cd backend && pip3 install -r requirements.txt ;;
+  # Setup — creates venv + installs deps
+  install)
+    if [ ! -f "$PYTHON" ]; then
+      echo -e "${CYAN}=== Creating virtual environment ===${RESET}"
+      python3 -m venv "$VENV"
+    fi
+    echo -e "${CYAN}=== Installing dependencies ===${RESET}"
+    "$PIP" install -r backend/requirements.txt
+    echo -e "${GREEN}=== Install complete ===${RESET}"
+    ;;
 
   # Database
-  migrate)       cd backend && python3 -m alembic upgrade head ;;
+  migrate)
+    _require_venv
+    (cd backend && ../"$PYTHON" -m alembic upgrade head)
+    ;;
 
   # Testing
-  test)          cd backend && python3 -m pytest tests/ -v ;;
-  test-cov)      cd backend && python3 -m pytest tests/ -v --cov=app --cov-report=term-missing ;;
+  test)
+    _require_venv
+    (cd backend && ../"$PYTHON" -m pytest tests/ -v)
+    ;;
+  test-cov)
+    _require_venv
+    (cd backend && ../"$PYTHON" -m pytest tests/ -v --cov=app --cov-report=term-missing)
+    ;;
 
   # Cold Start
-  seed-universe) cd backend && python3 scripts/seed_universe.py ;;
-  seed)          cd backend && python3 scripts/seed_historical.py ;;
+  seed-universe)
+    _require_venv
+    (cd backend && ../"$PYTHON" scripts/seed_universe.py)
+    ;;
+  seed)
+    _require_venv
+    (cd backend && ../"$PYTHON" scripts/seed_historical.py)
+    ;;
   cold-start)
+    _require_venv
     echo -e "${CYAN}=== Running migrations ===${RESET}"
-    (cd backend && python3 -m alembic upgrade head)
+    (cd backend && ../"$PYTHON" -m alembic upgrade head)
     echo -e "${CYAN}=== Seeding universe ===${RESET}"
-    (cd backend && python3 scripts/seed_universe.py)
+    (cd backend && ../"$PYTHON" scripts/seed_universe.py)
     echo -e "${CYAN}=== Seeding historical data ===${RESET}"
-    (cd backend && python3 scripts/seed_historical.py)
+    (cd backend && ../"$PYTHON" scripts/seed_historical.py)
     echo -e "${GREEN}=== Cold start complete ===${RESET}"
     ;;
 
   # Manual Triggers
-  scan)          cd backend && python3 -c "from app.tasks.premarket_scan import run_scan; run_scan()" ;;
-  watchlist)     cd backend && python3 -c "from app.tasks.watchlist_build import build_daily_watchlist; build_daily_watchlist()" ;;
-  review)        cd backend && python3 -c "from app.tasks.daily_meta_review import run_daily_meta_review; run_daily_meta_review()" ;;
+  scan)
+    _require_venv
+    (cd backend && ../"$PYTHON" -c "from app.tasks.premarket_scan import run_scan; run_scan()")
+    ;;
+  watchlist)
+    _require_venv
+    (cd backend && ../"$PYTHON" -c "from app.tasks.watchlist_build import build_daily_watchlist; build_daily_watchlist()")
+    ;;
+  review)
+    _require_venv
+    (cd backend && ../"$PYTHON" -c "from app.tasks.daily_meta_review import run_daily_meta_review; run_daily_meta_review()")
+    ;;
 
   *)
     echo -e "${CYAN}Signal Terminal — Available commands:${RESET}"
@@ -52,7 +97,7 @@ case "$1" in
     echo "    ./run.sh logs            # Tail backend + celery logs"
     echo ""
     echo -e "${YELLOW}  Setup:${RESET}"
-    echo "    ./run.sh install         # pip install backend dependencies"
+    echo "    ./run.sh install         # Create venv + pip install dependencies"
     echo ""
     echo -e "${YELLOW}  Database:${RESET}"
     echo "    ./run.sh migrate         # Run Alembic migrations"
