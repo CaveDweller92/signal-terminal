@@ -1,160 +1,244 @@
 """
 Universe Manager — maintains the master list of tradable stocks.
 
-Seeds S&P 500, NASDAQ 100, and TSX stocks into the stock_universe table.
-Phase 1 uses a hardcoded representative subset (~120 stocks).
-Production would pull from Wikipedia lists or a data API.
+When FINNHUB_API_KEY is configured:
+  - Fetches full US symbol list from Finnhub (/stock/symbol?exchange=US)
+  - Fetches full TSX symbol list from Finnhub (/stock/symbol?exchange=TO)
+  - Filters to common stocks only (type=Common Stock)
+
+Fallback (no API key / USE_SIMULATED_DATA=true):
+  - Uses the hardcoded representative subset below (~95 stocks)
 """
 
+import logging
 from datetime import datetime
 
+import httpx
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.stock_universe import StockUniverse
 
-# Representative subset of S&P 500 stocks (top by market cap + sector diversity)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Hardcoded fallback lists (used when no Finnhub key is available)
+# ---------------------------------------------------------------------------
+
 SP500_STOCKS = [
-    ("AAPL", "Apple Inc.", "Technology", "Consumer Electronics"),
-    ("MSFT", "Microsoft Corporation", "Technology", "Software"),
-    ("GOOGL", "Alphabet Inc.", "Technology", "Internet Services"),
-    ("AMZN", "Amazon.com Inc.", "Consumer Cyclical", "Internet Retail"),
-    ("NVDA", "NVIDIA Corporation", "Technology", "Semiconductors"),
-    ("META", "Meta Platforms Inc.", "Technology", "Internet Services"),
-    ("TSLA", "Tesla Inc.", "Consumer Cyclical", "Auto Manufacturers"),
-    ("BRK.B", "Berkshire Hathaway Inc.", "Financial Services", "Insurance"),
-    ("JPM", "JPMorgan Chase & Co.", "Financial Services", "Banks"),
-    ("V", "Visa Inc.", "Financial Services", "Credit Services"),
-    ("UNH", "UnitedHealth Group Inc.", "Healthcare", "Healthcare Plans"),
-    ("JNJ", "Johnson & Johnson", "Healthcare", "Drug Manufacturers"),
-    ("XOM", "Exxon Mobil Corporation", "Energy", "Oil & Gas"),
-    ("WMT", "Walmart Inc.", "Consumer Defensive", "Discount Stores"),
-    ("PG", "Procter & Gamble Co.", "Consumer Defensive", "Household Products"),
-    ("MA", "Mastercard Inc.", "Financial Services", "Credit Services"),
-    ("HD", "Home Depot Inc.", "Consumer Cyclical", "Home Improvement"),
-    ("CVX", "Chevron Corporation", "Energy", "Oil & Gas"),
-    ("LLY", "Eli Lilly and Company", "Healthcare", "Drug Manufacturers"),
-    ("ABBV", "AbbVie Inc.", "Healthcare", "Drug Manufacturers"),
-    ("PFE", "Pfizer Inc.", "Healthcare", "Drug Manufacturers"),
-    ("MRK", "Merck & Co. Inc.", "Healthcare", "Drug Manufacturers"),
-    ("COST", "Costco Wholesale", "Consumer Defensive", "Discount Stores"),
-    ("AVGO", "Broadcom Inc.", "Technology", "Semiconductors"),
-    ("PEP", "PepsiCo Inc.", "Consumer Defensive", "Beverages"),
-    ("KO", "Coca-Cola Company", "Consumer Defensive", "Beverages"),
-    ("TMO", "Thermo Fisher Scientific", "Healthcare", "Diagnostics"),
-    ("CSCO", "Cisco Systems Inc.", "Technology", "Networking"),
-    ("CRM", "Salesforce Inc.", "Technology", "Software"),
-    ("ACN", "Accenture plc", "Technology", "IT Services"),
-    ("ABT", "Abbott Laboratories", "Healthcare", "Medical Devices"),
-    ("MCD", "McDonald's Corporation", "Consumer Cyclical", "Restaurants"),
-    ("NKE", "Nike Inc.", "Consumer Cyclical", "Footwear"),
-    ("DIS", "Walt Disney Company", "Communication Services", "Entertainment"),
-    ("AMD", "Advanced Micro Devices", "Technology", "Semiconductors"),
-    ("NFLX", "Netflix Inc.", "Communication Services", "Entertainment"),
-    ("INTC", "Intel Corporation", "Technology", "Semiconductors"),
-    ("PYPL", "PayPal Holdings Inc.", "Financial Services", "Credit Services"),
-    ("BA", "Boeing Company", "Industrials", "Aerospace"),
-    ("GS", "Goldman Sachs Group", "Financial Services", "Banks"),
-    ("CAT", "Caterpillar Inc.", "Industrials", "Farm & Construction"),
-    ("RTX", "RTX Corporation", "Industrials", "Aerospace"),
-    ("SPGI", "S&P Global Inc.", "Financial Services", "Financial Data"),
-    ("LOW", "Lowe's Companies", "Consumer Cyclical", "Home Improvement"),
-    ("DE", "Deere & Company", "Industrials", "Farm & Construction"),
-    ("SYK", "Stryker Corporation", "Healthcare", "Medical Devices"),
-    ("ADP", "Automatic Data Processing", "Industrials", "Staffing"),
-    ("MMM", "3M Company", "Industrials", "Conglomerates"),
-    ("ISRG", "Intuitive Surgical", "Healthcare", "Medical Devices"),
-    ("GILD", "Gilead Sciences Inc.", "Healthcare", "Biotechnology"),
+    ("AAPL", "Apple Inc.", "NYSE", "sp500", "Technology", "Consumer Electronics", "US", "USD"),
+    ("MSFT", "Microsoft Corporation", "NYSE", "sp500", "Technology", "Software", "US", "USD"),
+    ("GOOGL", "Alphabet Inc.", "NASDAQ", "sp500", "Technology", "Internet Services", "US", "USD"),
+    ("AMZN", "Amazon.com Inc.", "NASDAQ", "sp500", "Consumer Cyclical", "Internet Retail", "US", "USD"),
+    ("NVDA", "NVIDIA Corporation", "NASDAQ", "sp500", "Technology", "Semiconductors", "US", "USD"),
+    ("META", "Meta Platforms Inc.", "NASDAQ", "sp500", "Technology", "Internet Services", "US", "USD"),
+    ("TSLA", "Tesla Inc.", "NASDAQ", "sp500", "Consumer Cyclical", "Auto Manufacturers", "US", "USD"),
+    ("BRK.B", "Berkshire Hathaway Inc.", "NYSE", "sp500", "Financial Services", "Insurance", "US", "USD"),
+    ("JPM", "JPMorgan Chase & Co.", "NYSE", "sp500", "Financial Services", "Banks", "US", "USD"),
+    ("V", "Visa Inc.", "NYSE", "sp500", "Financial Services", "Credit Services", "US", "USD"),
+    ("UNH", "UnitedHealth Group Inc.", "NYSE", "sp500", "Healthcare", "Healthcare Plans", "US", "USD"),
+    ("JNJ", "Johnson & Johnson", "NYSE", "sp500", "Healthcare", "Drug Manufacturers", "US", "USD"),
+    ("XOM", "Exxon Mobil Corporation", "NYSE", "sp500", "Energy", "Oil & Gas", "US", "USD"),
+    ("WMT", "Walmart Inc.", "NYSE", "sp500", "Consumer Defensive", "Discount Stores", "US", "USD"),
+    ("PG", "Procter & Gamble Co.", "NYSE", "sp500", "Consumer Defensive", "Household Products", "US", "USD"),
+    ("MA", "Mastercard Inc.", "NYSE", "sp500", "Financial Services", "Credit Services", "US", "USD"),
+    ("HD", "Home Depot Inc.", "NYSE", "sp500", "Consumer Cyclical", "Home Improvement", "US", "USD"),
+    ("CVX", "Chevron Corporation", "NYSE", "sp500", "Energy", "Oil & Gas", "US", "USD"),
+    ("LLY", "Eli Lilly and Company", "NYSE", "sp500", "Healthcare", "Drug Manufacturers", "US", "USD"),
+    ("ABBV", "AbbVie Inc.", "NYSE", "sp500", "Healthcare", "Drug Manufacturers", "US", "USD"),
+    ("PFE", "Pfizer Inc.", "NYSE", "sp500", "Healthcare", "Drug Manufacturers", "US", "USD"),
+    ("MRK", "Merck & Co. Inc.", "NYSE", "sp500", "Healthcare", "Drug Manufacturers", "US", "USD"),
+    ("COST", "Costco Wholesale", "NASDAQ", "sp500", "Consumer Defensive", "Discount Stores", "US", "USD"),
+    ("AVGO", "Broadcom Inc.", "NASDAQ", "sp500", "Technology", "Semiconductors", "US", "USD"),
+    ("PEP", "PepsiCo Inc.", "NASDAQ", "sp500", "Consumer Defensive", "Beverages", "US", "USD"),
+    ("KO", "Coca-Cola Company", "NYSE", "sp500", "Consumer Defensive", "Beverages", "US", "USD"),
+    ("TMO", "Thermo Fisher Scientific", "NYSE", "sp500", "Healthcare", "Diagnostics", "US", "USD"),
+    ("CSCO", "Cisco Systems Inc.", "NASDAQ", "sp500", "Technology", "Networking", "US", "USD"),
+    ("CRM", "Salesforce Inc.", "NYSE", "sp500", "Technology", "Software", "US", "USD"),
+    ("ACN", "Accenture plc", "NYSE", "sp500", "Technology", "IT Services", "US", "USD"),
+    ("ABT", "Abbott Laboratories", "NYSE", "sp500", "Healthcare", "Medical Devices", "US", "USD"),
+    ("MCD", "McDonald's Corporation", "NYSE", "sp500", "Consumer Cyclical", "Restaurants", "US", "USD"),
+    ("NKE", "Nike Inc.", "NYSE", "sp500", "Consumer Cyclical", "Footwear", "US", "USD"),
+    ("DIS", "Walt Disney Company", "NYSE", "sp500", "Communication Services", "Entertainment", "US", "USD"),
+    ("AMD", "Advanced Micro Devices", "NASDAQ", "sp500", "Technology", "Semiconductors", "US", "USD"),
+    ("NFLX", "Netflix Inc.", "NASDAQ", "sp500", "Communication Services", "Entertainment", "US", "USD"),
+    ("INTC", "Intel Corporation", "NASDAQ", "sp500", "Technology", "Semiconductors", "US", "USD"),
+    ("PYPL", "PayPal Holdings Inc.", "NASDAQ", "sp500", "Financial Services", "Credit Services", "US", "USD"),
+    ("BA", "Boeing Company", "NYSE", "sp500", "Industrials", "Aerospace", "US", "USD"),
+    ("GS", "Goldman Sachs Group", "NYSE", "sp500", "Financial Services", "Banks", "US", "USD"),
+    ("CAT", "Caterpillar Inc.", "NYSE", "sp500", "Industrials", "Farm & Construction", "US", "USD"),
+    ("RTX", "RTX Corporation", "NYSE", "sp500", "Industrials", "Aerospace", "US", "USD"),
+    ("SPGI", "S&P Global Inc.", "NYSE", "sp500", "Financial Services", "Financial Data", "US", "USD"),
+    ("LOW", "Lowe's Companies", "NYSE", "sp500", "Consumer Cyclical", "Home Improvement", "US", "USD"),
+    ("DE", "Deere & Company", "NYSE", "sp500", "Industrials", "Farm & Construction", "US", "USD"),
+    ("SYK", "Stryker Corporation", "NYSE", "sp500", "Healthcare", "Medical Devices", "US", "USD"),
+    ("ADP", "Automatic Data Processing", "NASDAQ", "sp500", "Industrials", "Staffing", "US", "USD"),
+    ("ISRG", "Intuitive Surgical", "NASDAQ", "sp500", "Healthcare", "Medical Devices", "US", "USD"),
+    ("GILD", "Gilead Sciences Inc.", "NASDAQ", "sp500", "Healthcare", "Biotechnology", "US", "USD"),
 ]
 
-# NASDAQ 100 additions (not already in SP500 list)
 NASDAQ100_STOCKS = [
-    ("MRVL", "Marvell Technology", "Technology", "Semiconductors"),
-    ("PANW", "Palo Alto Networks", "Technology", "Cybersecurity"),
-    ("SNPS", "Synopsys Inc.", "Technology", "Software"),
-    ("CDNS", "Cadence Design Systems", "Technology", "Software"),
-    ("KLAC", "KLA Corporation", "Technology", "Semiconductors"),
-    ("LRCX", "Lam Research", "Technology", "Semiconductors"),
-    ("ADBE", "Adobe Inc.", "Technology", "Software"),
-    ("MELI", "MercadoLibre Inc.", "Consumer Cyclical", "Internet Retail"),
-    ("FTNT", "Fortinet Inc.", "Technology", "Cybersecurity"),
-    ("WDAY", "Workday Inc.", "Technology", "Software"),
-    ("DXCM", "DexCom Inc.", "Healthcare", "Medical Devices"),
-    ("TEAM", "Atlassian Corporation", "Technology", "Software"),
-    ("ZS", "Zscaler Inc.", "Technology", "Cybersecurity"),
-    ("CRWD", "CrowdStrike Holdings", "Technology", "Cybersecurity"),
-    ("MNST", "Monster Beverage", "Consumer Defensive", "Beverages"),
-    ("ODFL", "Old Dominion Freight Line", "Industrials", "Trucking"),
-    ("FAST", "Fastenal Company", "Industrials", "Industrial Distribution"),
-    ("TTD", "Trade Desk Inc.", "Technology", "Software"),
-    ("CPRT", "Copart Inc.", "Industrials", "Auto Parts"),
-    ("SMCI", "Super Micro Computer", "Technology", "Computer Hardware"),
-    ("ON", "ON Semiconductor", "Technology", "Semiconductors"),
-    ("DASH", "DoorDash Inc.", "Technology", "Internet Services"),
-    ("COIN", "Coinbase Global", "Financial Services", "Capital Markets"),
-    ("MCHP", "Microchip Technology", "Technology", "Semiconductors"),
-    ("ARM", "Arm Holdings plc", "Technology", "Semiconductors"),
+    ("MRVL", "Marvell Technology", "NASDAQ", "nasdaq100", "Technology", "Semiconductors", "US", "USD"),
+    ("PANW", "Palo Alto Networks", "NASDAQ", "nasdaq100", "Technology", "Cybersecurity", "US", "USD"),
+    ("ADBE", "Adobe Inc.", "NASDAQ", "nasdaq100", "Technology", "Software", "US", "USD"),
+    ("CRWD", "CrowdStrike Holdings", "NASDAQ", "nasdaq100", "Technology", "Cybersecurity", "US", "USD"),
+    ("TEAM", "Atlassian Corporation", "NASDAQ", "nasdaq100", "Technology", "Software", "US", "USD"),
+    ("FTNT", "Fortinet Inc.", "NASDAQ", "nasdaq100", "Technology", "Cybersecurity", "US", "USD"),
+    ("ZS", "Zscaler Inc.", "NASDAQ", "nasdaq100", "Technology", "Cybersecurity", "US", "USD"),
+    ("WDAY", "Workday Inc.", "NASDAQ", "nasdaq100", "Technology", "Software", "US", "USD"),
+    ("TTD", "Trade Desk Inc.", "NASDAQ", "nasdaq100", "Technology", "Software", "US", "USD"),
+    ("COIN", "Coinbase Global", "NASDAQ", "nasdaq100", "Financial Services", "Capital Markets", "US", "USD"),
+    ("DASH", "DoorDash Inc.", "NASDAQ", "nasdaq100", "Technology", "Internet Services", "US", "USD"),
+    ("ARM", "Arm Holdings plc", "NASDAQ", "nasdaq100", "Technology", "Semiconductors", "US", "USD"),
 ]
 
-# TSX stocks (Canadian market) — symbols use .TO suffix for Finnhub/Yahoo compatibility
 TSX_STOCKS = [
-    ("RY.TO", "Royal Bank of Canada", "Financial Services", "Banks"),
-    ("TD.TO", "Toronto-Dominion Bank", "Financial Services", "Banks"),
-    ("BNS.TO", "Bank of Nova Scotia", "Financial Services", "Banks"),
-    ("BMO.TO", "Bank of Montreal", "Financial Services", "Banks"),
-    ("CM.TO", "Canadian Imperial Bank", "Financial Services", "Banks"),
-    ("ENB.TO", "Enbridge Inc.", "Energy", "Oil & Gas Midstream"),
-    ("CNR.TO", "Canadian National Railway", "Industrials", "Railroads"),
-    ("CP.TO", "Canadian Pacific Kansas City", "Industrials", "Railroads"),
-    ("SHOP.TO", "Shopify Inc.", "Technology", "Software"),
-    ("BCE.TO", "BCE Inc.", "Communication Services", "Telecom"),
-    ("TRP.TO", "TC Energy Corporation", "Energy", "Oil & Gas Midstream"),
-    ("SU.TO", "Suncor Energy Inc.", "Energy", "Oil & Gas"),
-    ("CNQ.TO", "Canadian Natural Resources", "Energy", "Oil & Gas"),
-    ("MFC.TO", "Manulife Financial", "Financial Services", "Insurance"),
-    ("ABX.TO", "Barrick Gold Corporation", "Materials", "Gold"),
-    ("ATD.TO", "Alimentation Couche-Tard", "Consumer Defensive", "Grocery"),
-    ("WCN.TO", "Waste Connections Inc.", "Industrials", "Waste Management"),
-    ("FTS.TO", "Fortis Inc.", "Utilities", "Utilities"),
-    ("L.TO", "Loblaw Companies", "Consumer Defensive", "Grocery"),
-    ("MG.TO", "Magna International", "Consumer Cyclical", "Auto Parts"),
+    ("RY.TO", "Royal Bank of Canada", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
+    ("TD.TO", "Toronto-Dominion Bank", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
+    ("BNS.TO", "Bank of Nova Scotia", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
+    ("BMO.TO", "Bank of Montreal", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
+    ("CM.TO", "Canadian Imperial Bank", "TSX", "tsx", "Financial Services", "Banks", "CA", "CAD"),
+    ("ENB.TO", "Enbridge Inc.", "TSX", "tsx", "Energy", "Oil & Gas Midstream", "CA", "CAD"),
+    ("CNR.TO", "Canadian National Railway", "TSX", "tsx", "Industrials", "Railroads", "CA", "CAD"),
+    ("CP.TO", "Canadian Pacific Kansas City", "TSX", "tsx", "Industrials", "Railroads", "CA", "CAD"),
+    ("SHOP.TO", "Shopify Inc.", "TSX", "tsx", "Technology", "Software", "CA", "CAD"),
+    ("BCE.TO", "BCE Inc.", "TSX", "tsx", "Communication Services", "Telecom", "CA", "CAD"),
+    ("TRP.TO", "TC Energy Corporation", "TSX", "tsx", "Energy", "Oil & Gas Midstream", "CA", "CAD"),
+    ("SU.TO", "Suncor Energy Inc.", "TSX", "tsx", "Energy", "Oil & Gas", "CA", "CAD"),
+    ("CNQ.TO", "Canadian Natural Resources", "TSX", "tsx", "Energy", "Oil & Gas", "CA", "CAD"),
+    ("MFC.TO", "Manulife Financial", "TSX", "tsx", "Financial Services", "Insurance", "CA", "CAD"),
+    ("ABX.TO", "Barrick Gold Corporation", "TSX", "tsx", "Materials", "Gold", "CA", "CAD"),
+    ("ATD.TO", "Alimentation Couche-Tard", "TSX", "tsx", "Consumer Defensive", "Grocery", "CA", "CAD"),
+    ("WCN.TO", "Waste Connections Inc.", "TSX", "tsx", "Industrials", "Waste Management", "CA", "CAD"),
+    ("FTS.TO", "Fortis Inc.", "TSX", "tsx", "Utilities", "Utilities", "CA", "CAD"),
+    ("L.TO", "Loblaw Companies", "TSX", "tsx", "Consumer Defensive", "Grocery", "CA", "CAD"),
+    ("MG.TO", "Magna International", "TSX", "tsx", "Consumer Cyclical", "Auto Parts", "CA", "CAD"),
 ]
 
+
+# ---------------------------------------------------------------------------
+# Finnhub fetcher
+# ---------------------------------------------------------------------------
+
+async def _fetch_finnhub_symbols(exchange: str, api_key: str) -> list[dict]:
+    """
+    Fetch all common stocks for an exchange from Finnhub.
+
+    exchange: "US" for NYSE/NASDAQ, "TO" for TSX
+    Returns list of {symbol, description, type} dicts.
+    """
+    url = f"https://finnhub.io/api/v1/stock/symbol?exchange={exchange}&token={api_key}"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        # Filter to common stocks only — exclude ETFs, warrants, rights, etc.
+        return [
+            s for s in data
+            if s.get("type") in ("Common Stock", "EQS")
+        ]
+    except Exception as e:
+        logger.error(f"Finnhub symbol fetch failed for exchange={exchange}: {e}")
+        return []
+
+
+def _map_finnhub_symbol(s: dict, universe: str, exchange: str,
+                         country: str, currency: str) -> tuple:
+    symbol = s["symbol"]
+    name = s.get("description") or symbol
+    return (symbol, name, exchange, universe, None, None, country, currency)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 async def seed_universe(db: AsyncSession) -> dict:
     """
-    Seed the stock_universe table with all tracked stocks.
-    Clears existing data and re-inserts (idempotent).
-    Returns count per universe.
+    Seed the stock_universe table.
+
+    If FINNHUB_API_KEY is set and USE_SIMULATED_DATA=false:
+      → fetches real symbol lists from Finnhub (full US + TSX universes)
+    Otherwise:
+      → falls back to the hardcoded representative subset
     """
-    # Clear existing
     await db.execute(delete(StockUniverse))
 
-    counts = {"sp500": 0, "nasdaq100": 0, "tsx": 0}
+    use_finnhub = (
+        not settings.use_simulated_data
+        and bool(settings.finnhub_api_key)
+    )
 
-    for symbol, name, sector, industry in SP500_STOCKS:
+    if use_finnhub:
+        return await _seed_from_finnhub(db)
+    else:
+        return await _seed_from_hardcoded(db)
+
+
+async def _seed_from_finnhub(db: AsyncSession) -> dict:
+    logger.info("Seeding universe from Finnhub...")
+    counts = {"sp500_nasdaq": 0, "tsx": 0}
+
+    # US stocks (NYSE + NASDAQ combined — Finnhub exchange=US covers both)
+    us_symbols = await _fetch_finnhub_symbols("US", settings.finnhub_api_key)
+    logger.info(f"Finnhub returned {len(us_symbols)} US common stocks")
+
+    for s in us_symbols:
         db.add(StockUniverse(
-            symbol=symbol, name=name, exchange="NYSE",
-            universe="sp500", sector=sector, industry=industry,
-            country="US", currency="USD",
+            symbol=s["symbol"],
+            name=(s.get("description") or s["symbol"])[:200],
+            exchange=s.get("mic", "US")[:20],
+            universe="sp500",  # treat all US as sp500 bucket for screener
+            country="US",
+            currency="USD",
+            last_updated=datetime.utcnow(),
         ))
-        counts["sp500"] += 1
+        counts["sp500_nasdaq"] += 1
 
-    for symbol, name, sector, industry in NASDAQ100_STOCKS:
-        db.add(StockUniverse(
-            symbol=symbol, name=name, exchange="NASDAQ",
-            universe="nasdaq100", sector=sector, industry=industry,
-            country="US", currency="USD",
-        ))
-        counts["nasdaq100"] += 1
+    # TSX stocks (exchange=TO)
+    tsx_symbols = await _fetch_finnhub_symbols("TO", settings.finnhub_api_key)
+    logger.info(f"Finnhub returned {len(tsx_symbols)} TSX common stocks")
 
-    for symbol, name, sector, industry in TSX_STOCKS:
+    for s in tsx_symbols:
+        # Finnhub returns TSX symbols without .TO — add it for consistency
+        symbol = s["symbol"]
+        if not symbol.endswith(".TO"):
+            symbol = f"{symbol}.TO"
         db.add(StockUniverse(
-            symbol=symbol, name=name, exchange="TSX",
-            universe="tsx", sector=sector, industry=industry,
-            country="CA", currency="CAD",
+            symbol=symbol[:10],
+            name=(s.get("description") or symbol)[:200],
+            exchange="TSX",
+            universe="tsx",
+            country="CA",
+            currency="CAD",
+            last_updated=datetime.utcnow(),
         ))
         counts["tsx"] += 1
+
+    await db.commit()
+    return counts
+
+
+async def _seed_from_hardcoded(db: AsyncSession) -> dict:
+    logger.info("Seeding universe from hardcoded fallback list...")
+    counts = {"sp500": 0, "nasdaq100": 0, "tsx": 0}
+
+    all_stocks = (
+        [(s, "sp500") for s in SP500_STOCKS]
+        + [(s, "nasdaq100") for s in NASDAQ100_STOCKS]
+        + [(s, "tsx") for s in TSX_STOCKS]
+    )
+
+    for stock, _ in all_stocks:
+        symbol, name, exchange, universe, sector, industry, country, currency = stock
+        db.add(StockUniverse(
+            symbol=symbol, name=name, exchange=exchange, universe=universe,
+            sector=sector, industry=industry, country=country, currency=currency,
+            last_updated=datetime.utcnow(),
+        ))
+        counts[universe] += 1
 
     await db.commit()
     return counts
