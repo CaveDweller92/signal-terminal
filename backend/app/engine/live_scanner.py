@@ -11,13 +11,17 @@ Uses the ws_manager singleton directly (no Celery/pub-sub needed).
 
 import asyncio
 import logging
-from datetime import datetime, time
+from datetime import datetime, date, time
+
+from sqlalchemy import select
 
 from app.api.websocket import ws_manager
 from app.api.signals import DEFAULT_SYMBOLS
 from app.db.database import async_session
 from app.engine.analyzer import SignalAnalyzer
 from app.engine.data_provider import get_data_provider
+from app.models.watchlist import DailyWatchlist
+from app.models.screener_result import ScreenerResult
 from app.positions.monitor import PositionMonitor
 
 logger = logging.getLogger(__name__)
@@ -40,13 +44,51 @@ def _is_market_hours() -> bool:
     return _MARKET_OPEN <= t <= _MARKET_CLOSE
 
 
+async def _get_scan_symbols() -> list[str]:
+    """
+    Resolve the symbols to scan in priority order:
+      1. Today's DailyWatchlist (Claude-curated or screener-selected)
+      2. Top 12 most recent ScreenerResult records
+      3. DEFAULT_SYMBOLS fallback (hardcoded 12)
+    """
+    async with async_session() as session:
+        # 1. Today's watchlist
+        today = date.today()
+        result = await session.execute(
+            select(DailyWatchlist.symbol)
+            .where(DailyWatchlist.watch_date == today)
+            .where(DailyWatchlist.user_removed == False)
+            .order_by(DailyWatchlist.screener_rank)
+        )
+        symbols = [row[0] for row in result.fetchall()]
+        if symbols:
+            logger.debug(f"LiveScanner: using today's watchlist ({len(symbols)} symbols)")
+            return symbols
+
+        # 2. Most recent screener results
+        result = await session.execute(
+            select(ScreenerResult.symbol)
+            .order_by(ScreenerResult.composite_score.desc())
+            .limit(12)
+        )
+        symbols = [row[0] for row in result.fetchall()]
+        if symbols:
+            logger.debug(f"LiveScanner: using screener results ({len(symbols)} symbols)")
+            return symbols
+
+    # 3. Hardcoded fallback
+    logger.debug("LiveScanner: using DEFAULT_SYMBOLS fallback")
+    return DEFAULT_SYMBOLS
+
+
 async def _scan_signals() -> None:
-    """Analyze the watchlist and broadcast a signal_update message."""
+    """Resolve watchlist symbols, analyze each, broadcast signal_update."""
     try:
+        symbols = await _get_scan_symbols()
         provider = get_data_provider()
         analyzer = SignalAnalyzer(provider)
         results = []
-        for symbol in DEFAULT_SYMBOLS:
+        for symbol in symbols:
             signal = await analyzer.analyze(symbol)
             results.append(signal)
         results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
