@@ -159,7 +159,6 @@ signal-terminal/
 
 ### General
 - No direct brokerage integration — user logs trades manually
-- `USE_SIMULATED_DATA=true` in Phase 1; real API keys added later
 - Market timezone: `America/New_York`
 
 ---
@@ -170,9 +169,8 @@ signal-terminal/
 DATABASE_URL=postgresql+asyncpg://signal:signal@localhost:5555/signal_terminal
 REDIS_URL=redis://localhost:6380/0
 ANTHROPIC_API_KEY=         # Required for Phase 3+ (Claude watchlist + meta-review)
-MASSIVE_API_KEY=           # Optional — simulated data used if blank
-FINNHUB_API_KEY=           # Optional
-USE_SIMULATED_DATA=true
+MASSIVE_API_KEY=           # Required for real US market data
+FINNHUB_API_KEY=           # Required for news sentiment
 TIMEZONE=America/New_York
 SCREENER_UNIVERSES=sp500,nasdaq100,tsx
 WATCHLIST_SIZE=12
@@ -259,7 +257,7 @@ Every 30m Regime detection
 
 | Item | Notes |
 |---|---|
-| Real market data | Massive.com (US) + yfinance (TSX) + Finnhub news + Claude sentiment — set `USE_SIMULATED_DATA=false` and add keys |
+| Real market data | Massive.com (US) + yfinance (TSX) + Finnhub news + Claude sentiment — fully wired, requires API keys |
 | Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
 | Adaptation/Performance UI | Done — Insights tab with Performance (equity curve, daily table) + Adaptation (parameter drift, meta-reviews) |
 | WebSocket signal feed | live_scanner.py broadcasts every 5 min during market hours |
