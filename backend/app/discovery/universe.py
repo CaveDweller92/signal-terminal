@@ -208,19 +208,14 @@ async def seed_universe(db: AsyncSession) -> dict:
     """
     Seed the stock_universe table.
 
-    If FINNHUB_API_KEY is set and USE_SIMULATED_DATA=false:
+    If FINNHUB_API_KEY is set:
       → fetches real symbol lists from Finnhub (full US + TSX universes)
     Otherwise:
       → falls back to the hardcoded representative subset
     """
     await db.execute(delete(StockUniverse))
 
-    use_finnhub = (
-        not settings.use_simulated_data
-        and bool(settings.finnhub_api_key)
-    )
-
-    if use_finnhub:
+    if settings.finnhub_api_key:
         return await _seed_from_finnhub(db)
     else:
         return await _seed_from_hardcoded(db)

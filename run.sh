@@ -78,10 +78,6 @@ case "$1" in
     _require_venv
     (cd backend && ../"$PYTHON" scripts/seed_universe.py)
     ;;
-  seed)
-    _require_venv
-    (cd backend && ../"$PYTHON" scripts/seed_historical.py)
-    ;;
   cold-start)
     _require_venv
     echo -e "${CYAN}=== Starting database + Redis ===${RESET}"
@@ -132,9 +128,8 @@ case "$1" in
     echo "    ./run.sh test-cov        # Run tests with coverage"
     echo ""
     echo -e "${YELLOW}  Cold Start:${RESET}"
-    echo "    ./run.sh cold-start      # migrate + seed-universe (no fake signals)"
-    echo "    ./run.sh seed-universe   # Load stock universe"
-    echo "    ./run.sh seed            # Generate historical signals"
+    echo "    ./run.sh cold-start      # migrate + seed-universe"
+    echo "    ./run.sh seed-universe   # Load stock universe from Finnhub"
     echo ""
     echo -e "${YELLOW}  Manual Triggers:${RESET}"
     echo "    ./run.sh scan            # Trigger pre-market screener"

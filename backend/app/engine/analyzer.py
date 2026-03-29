@@ -60,7 +60,7 @@ class SignalAnalyzer:
         self.data = data_provider
         self.config = config or AnalyzerConfig()
         # Real sentiment when both keys are configured; simulated otherwise
-        if settings.finnhub_api_key and settings.anthropic_api_key and not settings.use_simulated_data:
+        if settings.finnhub_api_key and settings.anthropic_api_key:
             self._sentiment = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
         else:
             self._sentiment = None

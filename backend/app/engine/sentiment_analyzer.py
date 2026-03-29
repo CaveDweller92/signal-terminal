@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from anthropic import AsyncAnthropic
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,9 @@ _CACHE_TTL = 30 * 60  # 30 minutes
 class SentimentAnalyzer:
     def __init__(self, finnhub_api_key: str, anthropic_api_key: str):
         self._finnhub_key = finnhub_api_key
-        self._anthropic_key = anthropic_api_key
         self._cache: dict[str, tuple[float, dict]] = {}
         self._client = httpx.AsyncClient(timeout=15.0)
+        self._anthropic = AsyncAnthropic(api_key=anthropic_api_key)
 
     def _cached(self, symbol: str) -> dict | None:
         if symbol in self._cache:
@@ -117,21 +118,12 @@ Guidelines:
 - -3: Major negative catalyst (fraud allegations, bankruptcy, major recall)"""
 
         try:
-            resp = await self._client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self._anthropic_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 256,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
+            message = await self._anthropic.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}],
             )
-            resp.raise_for_status()
-            content = resp.json()["content"][0]["text"].strip()
+            content = message.content[0].text.strip()
 
             # Parse JSON response
             parsed = json.loads(content)

@@ -6,15 +6,62 @@ If scoring or thresholds are wrong, the user gets bad signals.
 """
 
 import pytest
+import numpy as np
+from datetime import datetime, timedelta, timezone
 
 from app.engine.analyzer import AnalyzerConfig, SignalAnalyzer
-from app.engine.data_provider import SimulatedDataProvider
+from app.engine.data_provider import DataProvider
+
+
+class MockDataProvider(DataProvider):
+    """Deterministic in-memory provider for tests — no API keys required."""
+
+    def _bars(self, symbol: str, n: int, base: float = 150.0) -> list[dict]:
+        rng = np.random.default_rng(abs(hash(symbol)) % (2**31))
+        prices = base + np.cumsum(rng.normal(0, 1.0, size=n))
+        prices = np.maximum(prices, 1.0)
+        now = datetime.now(timezone.utc).replace(hour=9, minute=30, second=0, microsecond=0)
+        bars = []
+        for i, close in enumerate(prices):
+            high = close + abs(rng.normal(0, 0.5))
+            low = close - abs(rng.normal(0, 0.5))
+            open_p = prices[i - 1] if i > 0 else close
+            high = max(high, open_p, close)
+            low = min(low, open_p, close)
+            bars.append({
+                "open": round(float(open_p), 2),
+                "high": round(float(high), 2),
+                "low": round(float(low), 2),
+                "close": round(float(close), 2),
+                "volume": int(rng.integers(100_000, 1_000_000)),
+                "timestamp": (now + timedelta(minutes=5 * i)).isoformat(),
+            })
+        return bars
+
+    async def get_intraday(self, symbol: str, bars: int = 78) -> list[dict]:
+        return self._bars(symbol, bars, base=150.0)
+
+    async def get_daily(self, symbol: str, days: int = 60) -> list[dict]:
+        return self._bars(symbol, days, base=150.0)
+
+    async def get_quote(self, symbol: str) -> dict:
+        bars = await self.get_intraday(symbol)
+        latest = bars[-1]
+        prev = bars[-2]["close"] if len(bars) > 1 else latest["open"]
+        change = latest["close"] - prev
+        return {
+            "symbol": symbol,
+            "price": latest["close"],
+            "change": round(change, 2),
+            "change_pct": round(change / prev * 100, 2) if prev else 0.0,
+            "volume": latest["volume"],
+            "timestamp": latest["timestamp"],
+        }
 
 
 @pytest.fixture
 def analyzer():
-    provider = SimulatedDataProvider()
-    return SignalAnalyzer(provider)
+    return SignalAnalyzer(MockDataProvider())
 
 
 @pytest.fixture

@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     alert_email: str = ""
 
     # App
-    use_simulated_data: bool = True
     timezone: str = "America/New_York"
     screener_universes: str = "sp500,nasdaq100,tsx"
     watchlist_size: int = 12
@@ -52,7 +51,7 @@ class Settings(BaseSettings):
 
     @property
     def has_market_data_key(self) -> bool:
-        return bool(self.massive_api_key or self.finnhub_api_key)
+        return bool(self.massive_api_key)
 
     @property
     def has_anthropic_key(self) -> bool:

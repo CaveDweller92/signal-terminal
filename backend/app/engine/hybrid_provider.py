@@ -28,26 +28,10 @@ class HybridDataProvider(DataProvider):
         return self._massive
 
     async def get_intraday(self, symbol: str, bars: int = 78) -> list[dict]:
-        provider = self._provider_for(symbol)
-        result = await provider.get_intraday(symbol, bars)
-        # If Massive returned nothing for a US symbol, fall back to yfinance
-        if not result and provider is self._massive:
-            logger.info(f"HybridProvider: Massive empty for {symbol}, falling back to yfinance")
-            result = await self._yfinance.get_intraday(symbol, bars)
-        return result
+        return await self._provider_for(symbol).get_intraday(symbol, bars)
 
     async def get_daily(self, symbol: str, days: int = 60) -> list[dict]:
-        provider = self._provider_for(symbol)
-        result = await provider.get_daily(symbol, days)
-        if not result and provider is self._massive:
-            logger.info(f"HybridProvider: Massive empty for {symbol}, falling back to yfinance")
-            result = await self._yfinance.get_daily(symbol, days)
-        return result
+        return await self._provider_for(symbol).get_daily(symbol, days)
 
     async def get_quote(self, symbol: str) -> dict:
-        provider = self._provider_for(symbol)
-        quote = await provider.get_quote(symbol)
-        if quote["price"] == 0.0 and provider is self._massive:
-            logger.info(f"HybridProvider: Massive quote empty for {symbol}, falling back to yfinance")
-            quote = await self._yfinance.get_quote(symbol)
-        return quote
+        return await self._provider_for(symbol).get_quote(symbol)

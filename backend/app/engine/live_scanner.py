@@ -16,7 +16,6 @@ from datetime import datetime, date, time
 from sqlalchemy import select
 
 from app.api.websocket import ws_manager
-from app.api.signals import DEFAULT_SYMBOLS
 from app.db.database import async_session
 from app.engine.analyzer import SignalAnalyzer
 from app.engine.data_provider import get_data_provider
@@ -49,7 +48,6 @@ async def _get_scan_symbols() -> list[str]:
     Resolve the symbols to scan in priority order:
       1. Today's DailyWatchlist (Claude-curated or screener-selected)
       2. Top 12 most recent ScreenerResult records
-      3. DEFAULT_SYMBOLS fallback (hardcoded 12)
     """
     async with async_session() as session:
         # 1. Today's watchlist
@@ -76,15 +74,16 @@ async def _get_scan_symbols() -> list[str]:
             logger.debug(f"LiveScanner: using screener results ({len(symbols)} symbols)")
             return symbols
 
-    # 3. Hardcoded fallback
-    logger.debug("LiveScanner: using DEFAULT_SYMBOLS fallback")
-    return DEFAULT_SYMBOLS
+    logger.debug("LiveScanner: no symbols available — run the screener first")
+    return []
 
 
 async def _scan_signals() -> None:
     """Resolve watchlist symbols, analyze each, broadcast signal_update."""
     try:
         symbols = await _get_scan_symbols()
+        if not symbols:
+            return
         provider = get_data_provider()
         analyzer = SignalAnalyzer(provider)
         results = []

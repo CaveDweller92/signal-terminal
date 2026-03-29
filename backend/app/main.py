@@ -37,12 +37,10 @@ async def startup_event():
     """Log configuration status on startup and launch background scanner."""
     global _scanner_task
     logger.info("Signal Terminal starting up...")
-    logger.info(f"  Simulated data: {settings.use_simulated_data}")
-    if settings.use_simulated_data or not settings.has_market_data_key:
-        logger.warning("  Market data: SIMULATED (set MASSIVE_API_KEY or USE_SIMULATED_DATA=false for real data)")
+    if settings.has_market_data_key:
+        logger.info("  Market data: Massive.com (US) + yfinance (.TO)")
     else:
-        provider = "Massive" if settings.massive_api_key else "yfinance"
-        logger.info(f"  Market data: {provider} (real data)")
+        logger.warning("  Market data: MASSIVE_API_KEY not set — add it to .env")
     logger.info(f"  Anthropic API: {'configured' if settings.has_anthropic_key else 'not configured (fallback mode)'}")
     logger.info(f"  Notifications: {'configured' if settings.resend_api_key else 'not configured (logging only)'}")
     logger.info(f"  Timezone: {settings.timezone}")
@@ -85,7 +83,7 @@ async def root():
         "name": "Signal Terminal",
         "version": "0.1.0",
         "status": "running",
-        "simulated_data": settings.use_simulated_data,
+        "market_data": "massive+yfinance",
     }
 
 
