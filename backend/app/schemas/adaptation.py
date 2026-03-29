@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -35,12 +35,12 @@ class ParameterSnapshotResponse(BaseModel):
 
 class MetaReviewResponse(BaseModel):
     id: int
-    review_date: str  # date as ISO string
+    review_date: date
     regime_at_review: str | None = None
     summary: str
-    recommendations: dict | None = None
-    parameter_adjustments: dict | None = None
-    exit_strategy_assessment: dict | None = None
+    recommendations: list | dict | None = None
+    parameter_adjustments: list | dict | None = None
+    exit_strategy_assessment: list | dict | None = None
     signals_generated: int
     signals_correct: int
     avg_return: float | None = None

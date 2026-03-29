@@ -31,9 +31,9 @@ export interface MetaReview {
   review_date: string;
   regime_at_review: string | null;
   summary: string;
-  recommendations: Record<string, unknown> | null;
-  parameter_adjustments: Record<string, unknown> | null;
-  exit_strategy_assessment: Record<string, unknown> | null;
+  recommendations: string[] | Record<string, unknown> | null;
+  parameter_adjustments: string[] | Record<string, unknown> | null;
+  exit_strategy_assessment: string[] | Record<string, unknown> | null;
   signals_generated: number;
   signals_correct: number;
   avg_return: number | null;

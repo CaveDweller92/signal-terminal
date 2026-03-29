@@ -1,6 +1,21 @@
 import { useState } from 'react';
 import type { MetaReview } from '../../types/adaptation';
 
+function renderJsonField(value: string[] | Record<string, unknown> | null): React.ReactNode {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    return value.map((item, i) => (
+      <div key={i} className="text-xs text-zinc-300">• {String(item)}</div>
+    ));
+  }
+  return Object.entries(value).map(([k, v]) => (
+    <div key={k} className="flex gap-2 text-xs font-mono">
+      <span className="text-zinc-500 shrink-0">{k}:</span>
+      <span className="text-zinc-300">{String(v)}</span>
+    </div>
+  ));
+}
+
 interface MetaReviewCardProps {
   review: MetaReview;
   expanded?: boolean;
@@ -59,36 +74,22 @@ export function MetaReviewCard({ review, expanded: defaultExpanded = false }: Me
           </div>
 
           {/* Recommendations */}
-          {review.recommendations && Object.keys(review.recommendations).length > 0 && (
+          {review.recommendations && (Array.isArray(review.recommendations) ? review.recommendations.length > 0 : Object.keys(review.recommendations).length > 0) && (
             <div>
               <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5 font-semibold">
                 Recommendations
               </p>
-              <div className="space-y-1">
-                {Object.entries(review.recommendations).map(([key, value]) => (
-                  <div key={key} className="flex gap-2 text-xs font-mono">
-                    <span className="text-zinc-500 shrink-0">{key}:</span>
-                    <span className="text-zinc-300">{String(value)}</span>
-                  </div>
-                ))}
-              </div>
+              <div className="space-y-1">{renderJsonField(review.recommendations)}</div>
             </div>
           )}
 
           {/* Parameter adjustments */}
-          {review.parameter_adjustments && Object.keys(review.parameter_adjustments).length > 0 && (
+          {review.parameter_adjustments && (Array.isArray(review.parameter_adjustments) ? review.parameter_adjustments.length > 0 : Object.keys(review.parameter_adjustments).length > 0) && (
             <div>
               <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5 font-semibold">
                 Parameter Adjustments
               </p>
-              <div className="space-y-1">
-                {Object.entries(review.parameter_adjustments).map(([key, value]) => (
-                  <div key={key} className="flex gap-2 text-xs font-mono">
-                    <span className="text-zinc-500 shrink-0">{key}:</span>
-                    <span className="text-zinc-300">{String(value)}</span>
-                  </div>
-                ))}
-              </div>
+              <div className="space-y-1">{renderJsonField(review.parameter_adjustments)}</div>
             </div>
           )}
 
