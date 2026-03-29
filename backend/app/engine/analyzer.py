@@ -13,9 +13,13 @@ Phase 1: sentiment and fundamental scores are simulated.
 Phase 3+ will plug in Claude sentiment analysis and real fundamentals.
 """
 
+import logging
+
 import numpy as np
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 from app.engine.data_provider import DataProvider
 from app.engine.sentiment_analyzer import SentimentAnalyzer
 from app.engine.indicators import (
@@ -79,6 +83,10 @@ class SignalAnalyzer:
         """
         bars = await self.data.get_intraday(symbol)
         daily = await self.data.get_daily(symbol)
+
+        if not bars or not daily:
+            logger.warning(f"Analyzer: no data for {symbol} — skipping")
+            return None
 
         closes = np.array([b["close"] for b in bars])
         highs = np.array([b["high"] for b in bars])

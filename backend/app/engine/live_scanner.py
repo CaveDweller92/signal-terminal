@@ -89,7 +89,8 @@ async def _scan_signals() -> None:
         results = []
         for symbol in symbols:
             signal = await analyzer.analyze(symbol)
-            results.append(signal)
+            if signal is not None:
+                results.append(signal)
         results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
 
         await ws_manager.broadcast({

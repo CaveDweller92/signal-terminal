@@ -73,7 +73,8 @@ async def get_signals(
     results = []
     for symbol in symbol_list:
         signal = await analyzer.analyze(symbol)
-        results.append(signal)
+        if signal is not None:
+            results.append(signal)
 
     results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
     return {"signals": results, "count": len(results)}

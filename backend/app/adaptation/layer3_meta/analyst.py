@@ -17,7 +17,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -104,7 +104,10 @@ class MetaAnalyst:
         else:
             analysis = self._fallback_review(stats)
 
-        # Save to DB
+        # Save to DB — delete existing record for today first (allow re-runs)
+        await self.db.execute(
+            delete(MetaReview).where(MetaReview.review_date == today)
+        )
         review = MetaReview(
             review_date=today,
             regime_at_review=stats["regime"],
@@ -198,19 +201,25 @@ class MetaAnalyst:
 
     async def _claude_review(self, stats: dict) -> dict:
         """Use Claude API for the meta-review."""
-        import anthropic
+        from anthropic import AsyncAnthropic
 
         prompt = REVIEW_PROMPT.format(**stats)
 
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        message = client.messages.create(
-            model="claude-sonnet-4-5-20251001",
+        client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        message = await client.messages.create(
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
 
         try:
-            return json.loads(message.content[0].text)
+            text = message.content[0].text.strip()
+            # Strip markdown code fences if present
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            return json.loads(text.strip())
         except (json.JSONDecodeError, IndexError):
             logger.warning("Claude meta-review returned invalid JSON, using fallback")
             return self._fallback_review(stats)
