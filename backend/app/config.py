@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6380/0"
 
     # Market Data
-    polygon_api_key: str = ""
+    massive_api_key: str = ""
     finnhub_api_key: str = ""
 
     # AI
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     @property
     def has_market_data_key(self) -> bool:
-        return bool(self.polygon_api_key or self.finnhub_api_key)
+        return bool(self.massive_api_key or self.finnhub_api_key)
 
     @property
     def has_anthropic_key(self) -> bool:

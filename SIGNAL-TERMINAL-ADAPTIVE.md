@@ -68,7 +68,7 @@ The system runs autonomously — every morning you get a fresh watchlist, entry 
 | Task Queue | Celery + Redis |
 | WebSocket | FastAPI WebSocket for live signals + exit alerts |
 | Notifications | Resend (email), Web Push API (browser) |
-| Market Data | Polygon.io or Finnhub (simulated in Phase 1) |
+| Market Data | Massive.com (US) + yfinance (TSX) + Finnhub news (simulated in Phase 1) |
 | DevOps | Docker Compose, GitHub Actions CI |
 
 ---
@@ -402,7 +402,7 @@ DATABASE_URL=postgresql://signal:signal@localhost:5432/signal_terminal
 REDIS_URL=redis://localhost:6379/0
 
 # Market Data (blank = simulated)
-POLYGON_API_KEY=
+MASSIVE_API_KEY=
 FINNHUB_API_KEY=
 
 # Required for Layer 3 + AI Watchlist

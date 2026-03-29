@@ -10,7 +10,7 @@ from app.config import settings
 class DataProvider(ABC):
     """
     Interface for market data. The rest of the app calls these methods
-    and doesn't care whether the data is simulated or from Polygon/Finnhub.
+    and doesn't care whether the data is simulated or from Massive/yfinance.
     """
 
     @abstractmethod
@@ -236,19 +236,18 @@ class SimulatedDataProvider(DataProvider):
 def get_data_provider() -> DataProvider:
     """
     Factory — returns the best available provider:
-      1. Polygon.io  (if POLYGON_API_KEY set and USE_SIMULATED_DATA=false)
-      2. Finnhub     (if FINNHUB_API_KEY set and USE_SIMULATED_DATA=false)
-      3. Simulated   (fallback / USE_SIMULATED_DATA=true)
-
-    TSX symbols use the .TO suffix (e.g. TD.TO) — supported by both Finnhub
-    and Polygon. Simulated provider also maps .TO symbols to realistic CAD prices.
+      1. HybridDataProvider  (Massive.com for US + yfinance for .TO)
+                             — requires MASSIVE_API_KEY and USE_SIMULATED_DATA=false
+      2. YFinanceDataProvider (free, covers both US + TSX .TO)
+                             — when USE_SIMULATED_DATA=false but no Massive key
+      3. Simulated           (fallback / USE_SIMULATED_DATA=true)
     """
     if not settings.use_simulated_data:
-        if settings.polygon_api_key:
-            from app.engine.polygon_provider import PolygonDataProvider
-            return PolygonDataProvider(settings.polygon_api_key)
-        if settings.finnhub_api_key:
-            from app.engine.finnhub_provider import FinnhubDataProvider
-            return FinnhubDataProvider(settings.finnhub_api_key)
+        if settings.massive_api_key:
+            from app.engine.hybrid_provider import HybridDataProvider
+            return HybridDataProvider(settings.massive_api_key)
+        # No Massive key — use yfinance for everything (free, works for US + TSX)
+        from app.engine.yfinance_provider import YFinanceDataProvider
+        return YFinanceDataProvider()
 
     return SimulatedDataProvider()

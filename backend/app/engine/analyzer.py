@@ -17,6 +17,7 @@ import numpy as np
 
 from app.config import settings
 from app.engine.data_provider import DataProvider
+from app.engine.sentiment_analyzer import SentimentAnalyzer
 from app.engine.indicators import (
     calc_atr,
     calc_ema,
@@ -58,6 +59,11 @@ class SignalAnalyzer:
     def __init__(self, data_provider: DataProvider, config: AnalyzerConfig | None = None):
         self.data = data_provider
         self.config = config or AnalyzerConfig()
+        # Real sentiment when both keys are configured; simulated otherwise
+        if settings.finnhub_api_key and settings.anthropic_api_key and not settings.use_simulated_data:
+            self._sentiment = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
+        else:
+            self._sentiment = None
 
     async def analyze(self, symbol: str) -> dict:
         """
@@ -103,10 +109,15 @@ class SignalAnalyzer:
             current_rsi, current_histogram, crossover, current_vol_ratio
         )
 
-        # --- Sentiment & fundamental (simulated in Phase 1) ---
-        sentiment_score = self._simulated_sentiment(symbol)
+        # --- Sentiment & fundamental ---
+        if self._sentiment is not None:
+            sentiment_data = await self._sentiment.get_sentiment(symbol)
+            sentiment_score = sentiment_data["score"]
+            sentiment_reasons = sentiment_data["reasons"]
+        else:
+            sentiment_score = self._simulated_sentiment(symbol)
+            sentiment_reasons = self._sentiment_reasons(sentiment_score)
         fundamental_score = self._simulated_fundamental(symbol)
-        sentiment_reasons = self._sentiment_reasons(sentiment_score)
         fundamental_reasons = self._fundamental_reasons(fundamental_score)
 
         # --- Composite conviction ---

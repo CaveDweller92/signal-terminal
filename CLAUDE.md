@@ -32,7 +32,7 @@ Full spec: `SIGNAL-TERMINAL-ADAPTIVE.md`
 | Task Queue | Celery + Redis (beat scheduler) |
 | WebSocket | FastAPI WebSocket |
 | Notifications | Resend (email), Web Push API |
-| Market Data | Polygon.io or Finnhub (simulated in Phase 1) |
+| Market Data | Massive.com (US) + yfinance (TSX) + Finnhub news (simulated in Phase 1) |
 | DevOps | Docker Compose, GitHub Actions |
 
 ---
@@ -170,7 +170,7 @@ signal-terminal/
 DATABASE_URL=postgresql+asyncpg://signal:signal@localhost:5555/signal_terminal
 REDIS_URL=redis://localhost:6380/0
 ANTHROPIC_API_KEY=         # Required for Phase 3+ (Claude watchlist + meta-review)
-POLYGON_API_KEY=           # Optional — simulated data used if blank
+MASSIVE_API_KEY=           # Optional — simulated data used if blank
 FINNHUB_API_KEY=           # Optional
 USE_SIMULATED_DATA=true
 TIMEZONE=America/New_York
@@ -259,7 +259,7 @@ Every 30m Regime detection
 
 | Item | Notes |
 |---|---|
-| Real market data | `data_provider.py` stubs Polygon.io/Finnhub; `USE_SIMULATED_DATA=true` for now |
+| Real market data | Massive.com (US) + yfinance (TSX) + Finnhub news + Claude sentiment — set `USE_SIMULATED_DATA=false` and add keys |
 | Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
 | Adaptation/Performance UI | Done — Insights tab with Performance (equity curve, daily table) + Adaptation (parameter drift, meta-reviews) |
 | WebSocket signal feed | live_scanner.py broadcasts every 5 min during market hours |

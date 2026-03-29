@@ -39,9 +39,9 @@ async def startup_event():
     logger.info("Signal Terminal starting up...")
     logger.info(f"  Simulated data: {settings.use_simulated_data}")
     if settings.use_simulated_data or not settings.has_market_data_key:
-        logger.warning("  Market data: SIMULATED (set FINNHUB_API_KEY or POLYGON_API_KEY + USE_SIMULATED_DATA=false for real data)")
+        logger.warning("  Market data: SIMULATED (set MASSIVE_API_KEY or USE_SIMULATED_DATA=false for real data)")
     else:
-        provider = "Polygon" if settings.polygon_api_key else "Finnhub"
+        provider = "Massive" if settings.massive_api_key else "yfinance"
         logger.info(f"  Market data: {provider} (real data)")
     logger.info(f"  Anthropic API: {'configured' if settings.has_anthropic_key else 'not configured (fallback mode)'}")
     logger.info(f"  Notifications: {'configured' if settings.resend_api_key else 'not configured (logging only)'}")

@@ -35,6 +35,16 @@ case "$1" in
     (cd backend && ../"$PYTHON" -m alembic upgrade head)
     echo -e "${GREEN}=== Database reset complete ===${RESET}"
     ;;
+  docker-clean)
+    echo -e "${YELLOW}This will remove all Signal Terminal containers, images, and volumes.${RESET}"
+    read -p "Are you sure? (y/N) " confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+      docker compose down -v --rmi all
+      echo -e "${GREEN}=== Signal Terminal Docker resources cleaned ===${RESET}"
+    else
+      echo "Cancelled."
+    fi
+    ;;
 
   # Setup — creates venv + installs deps
   install)
@@ -109,6 +119,7 @@ case "$1" in
     echo "    ./run.sh down            # Stop all containers"
     echo "    ./run.sh logs            # Tail backend + celery logs"
     echo "    ./run.sh reset-db        # Drop + recreate database (fresh slate)"
+    echo "    ./run.sh docker-clean    # Remove ALL Docker containers, images, volumes"
     echo ""
     echo -e "${YELLOW}  Setup:${RESET}"
     echo "    ./run.sh install         # Create venv + pip install dependencies"

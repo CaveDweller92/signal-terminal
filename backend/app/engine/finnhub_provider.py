@@ -25,6 +25,8 @@ class FinnhubDataProvider(DataProvider):
         self._key = api_key
         self._cache: dict[str, tuple[float, object]] = {}
         self._client = httpx.AsyncClient(timeout=10.0)
+        # Symbols that returned 403 — skip on future calls (requires paid plan)
+        self._blocked: set[str] = set()
 
     def _cached(self, key: str, ttl: int) -> object | None:
         if key in self._cache:

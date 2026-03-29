@@ -1,10 +1,10 @@
 """
-Polygon.io data provider.
+Massive.com data provider.
 
-Uses the free tier (end-of-day data + 15-min delayed intraday on free plan,
-real-time on paid plans). All endpoints are v2 Aggregates.
+Uses the v2 Aggregates API for OHLCV data.
+Docs: https://massive.com/docs/rest/quickstart
 
-Docs: https://polygon.io/docs/stocks
+Docs: https://massive.com/docs/rest/quickstart
 """
 
 import logging
@@ -16,10 +16,10 @@ from app.engine.data_provider import DataProvider
 
 logger = logging.getLogger(__name__)
 
-_BASE = "https://api.polygon.io"
+_BASE = "https://api.massive.com"
 
 
-class PolygonDataProvider(DataProvider):
+class MassiveDataProvider(DataProvider):
     def __init__(self, api_key: str):
         self._key = api_key
         self._cache: dict[str, tuple[float, object]] = {}  # key → (fetched_at, data)
@@ -53,16 +53,16 @@ class PolygonDataProvider(DataProvider):
                 resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
-                logger.error(f"Polygon intraday error for {symbol}: {e}")
+                logger.error(f"Massive intraday error for {symbol}: {e}")
                 return []
 
             results = data.get("results") or []
             if results:
-                bars_data = [_polygon_bar(r) for r in results[-bars:]]
+                bars_data = [_massive_bar(r) for r in results[-bars:]]
                 self._store(cache_key, bars_data)
                 return bars_data
 
-        logger.warning(f"Polygon: no intraday data found for {symbol}")
+        logger.warning(f"Massive: no intraday data found for {symbol}")
         return []
 
     async def get_daily(self, symbol: str, days: int = 60) -> list[dict]:
@@ -82,11 +82,11 @@ class PolygonDataProvider(DataProvider):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            logger.error(f"Polygon daily error for {symbol}: {e}")
+            logger.error(f"Massive daily error for {symbol}: {e}")
             return []
 
         results = data.get("results") or []
-        bars_data = [_polygon_bar(r) for r in results[-days:]]
+        bars_data = [_massive_bar(r) for r in results[-days:]]
         self._store(cache_key, bars_data)
         return bars_data
 
@@ -109,8 +109,8 @@ class PolygonDataProvider(DataProvider):
         }
 
 
-def _polygon_bar(r: dict) -> dict:
-    """Convert a Polygon aggregate result to our standard bar format."""
+def _massive_bar(r: dict) -> dict:
+    """Convert a Massive aggregate result to our standard bar format."""
     ts = datetime.fromtimestamp(r["t"] / 1000, tz=timezone.utc)
     return {
         "open": round(float(r["o"]), 2),
