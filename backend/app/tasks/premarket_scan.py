@@ -14,6 +14,9 @@ def run_scan():
 
 
 async def _run_scan():
+    import logging as _logging
+    _logging.basicConfig(level=_logging.INFO, format="%(levelname)s  %(message)s")
+
     from app.db.database import async_session
     from app.engine.data_provider import get_data_provider
     from app.discovery.universe import get_active_symbols
@@ -25,8 +28,9 @@ async def _run_scan():
             logger.warning("No stocks in universe — skipping scan")
             return
 
+        print(f"Scanning {len(stocks)} stocks…")
         provider = get_data_provider()
         screener = PremarketScreener(provider)
         results = await screener.scan(stocks, db)
         await db.commit()
-        logger.info(f"Pre-market scan complete: {len(results)} stocks scored")
+        print(f"Scan complete: {len(results)} stocks saved to screener_results")

@@ -42,6 +42,7 @@ class MassiveDataProvider(DataProvider):
             return cached  # type: ignore[return-value]
 
         # Try today first; fall back to previous trading day if empty
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         for days_back in range(0, 5):
             date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
             url = (
@@ -58,6 +59,11 @@ class MassiveDataProvider(DataProvider):
 
             results = data.get("results") or []
             if results:
+                if date != today:
+                    logger.info(
+                        "Massive: no data for %s on %s — using %s (%d days back)",
+                        symbol, today, date, days_back,
+                    )
                 bars_data = [_massive_bar(r) for r in results[-bars:]]
                 self._store(cache_key, bars_data)
                 return bars_data

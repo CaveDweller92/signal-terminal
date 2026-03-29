@@ -97,8 +97,10 @@ class PremarketScreener:
         top_n: int = 30,
     ) -> list[ScreenerResult]:
         """
-        Scan all stocks, score them, save top N to DB.
-        Returns the top N ScreenerResult objects.
+        Scan all stocks, score them, save ALL scored results to DB.
+        Results are flushed after each batch so partial data is available
+        if the scan is interrupted.
+        Returns the top_n ScreenerResult objects by composite score.
         """
         today = date.today()
 
@@ -117,6 +119,7 @@ class PremarketScreener:
         )
 
         scored: list[dict] = []
+        saved_rows: dict[str, ScreenerResult] = {}  # symbol → row, for return value
         total = len(stocks)
 
         for batch_start in range(0, total, self.BATCH_SIZE):
@@ -127,6 +130,7 @@ class PremarketScreener:
             tasks = [self._score_stock(stock, sector_perf) for stock in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
+            batch_results: list[ScreenerResult] = []
             for stock, result in zip(batch, results):
                 if isinstance(result, Exception):
                     logger.debug("Skipping %s: %s", stock.symbol, result)
@@ -136,8 +140,31 @@ class PremarketScreener:
                 result["sector_name"] = stock.sector
                 scored.append(result)
 
+                row = ScreenerResult(
+                    scan_date=today,
+                    symbol=result["symbol"],
+                    exchange=result["exchange"],
+                    composite_score=round(result["composite"], 4),
+                    volume_score=round(result["volume"], 4),
+                    gap_score=round(result["gap"], 4),
+                    technical_score=round(result["technical"], 4),
+                    fundamental_score=round(result["fundamental"], 4),
+                    news_score=round(result["news"], 4),
+                    sector_score=round(result["sector"], 4),
+                    premarket_gap_pct=round(result.get("gap_pct", 0), 4),
+                    relative_volume=round(result.get("rel_volume", 1), 2),
+                    sector=result["sector_name"],
+                    has_catalyst=result.get("has_catalyst", False),
+                )
+                db.add(row)
+                saved_rows[result["symbol"]] = row
+                batch_results.append(row)
+
+            # Flush after each batch — results available in DB even if scan is interrupted
+            await db.flush()
+
             processed = min(batch_start + self.BATCH_SIZE, total)
-            logger.info("Screener progress: %d/%d stocks scored", processed, total)
+            print(f"  {processed}/{total} scored ({len(scored)} with data)…", flush=True)
 
             # Rate-limit cooldown — wait out remaining slice time between batches
             if batch_start + self.BATCH_SIZE < total:
@@ -146,34 +173,12 @@ class PremarketScreener:
                 if wait > 0:
                     await asyncio.sleep(wait)
 
-        # Sort by composite score descending
-        scored.sort(key=lambda s: s["composite"], reverse=True)
-
-        # Save top N
-        results_list: list[ScreenerResult] = []
-        for entry in scored[:top_n]:
-            result = ScreenerResult(
-                scan_date=today,
-                symbol=entry["symbol"],
-                exchange=entry["exchange"],
-                composite_score=round(entry["composite"], 4),
-                volume_score=round(entry["volume"], 4),
-                gap_score=round(entry["gap"], 4),
-                technical_score=round(entry["technical"], 4),
-                fundamental_score=round(entry["fundamental"], 4),
-                news_score=round(entry["news"], 4),
-                sector_score=round(entry["sector"], 4),
-                premarket_gap_pct=round(entry.get("gap_pct", 0), 4),
-                relative_volume=round(entry.get("rel_volume", 1), 2),
-                sector=entry["sector_name"],
-                has_catalyst=entry.get("has_catalyst", False),
-            )
-            db.add(result)
-            results_list.append(result)
-
         await db.commit()
-        logger.info("Screener complete: %d stocks scored, top %d saved", len(scored), len(results_list))
-        return results_list
+        logger.info("Screener complete: %d stocks scored and saved", len(scored))
+
+        # Return top N for callers that need an immediate ranked list
+        scored.sort(key=lambda s: s["composite"], reverse=True)
+        return [saved_rows[e["symbol"]] for e in scored[:top_n] if e["symbol"] in saved_rows]
 
     async def _score_stock(self, stock: StockUniverse, sector_perf: dict[str, float]) -> dict:
         """Score a single stock on all 6 dimensions (0-10 scale each)."""
