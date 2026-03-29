@@ -7,7 +7,8 @@ Runs daily at 5:00 AM ET. Scores each stock on 6 dimensions:
   3. Technical score  — RSI, EMA trend, MACD alignment
   4. Fundamental score — 20-day price momentum + Sharpe-like ratio (from daily data)
   5. News score       — Finnhub article count/recency (last 3 days)
-  6. Sector score     — SPDR sector ETF 5-day return relative to SPY
+  6. Sector score     — SPDR sector ETF (US) or iShares TSX sector ETF (CA)
+                        5-day return relative to SPY / XIU.TO
 
 Composite = weighted sum of all 6 scores.
 Top 30 by composite score are saved to screener_results.
@@ -34,8 +35,8 @@ from app.models.stock_universe import StockUniverse
 
 logger = logging.getLogger(__name__)
 
-# SPDR sector ETF tickers mapped to sector names as stored in StockUniverse
-SECTOR_ETF_MAP: dict[str, str] = {
+# SPDR sector ETF tickers — benchmark: SPY
+SECTOR_ETF_MAP_US: dict[str, str] = {
     "Technology": "XLK",
     "Financial Services": "XLF",
     "Healthcare": "XLV",
@@ -47,6 +48,19 @@ SECTOR_ETF_MAP: dict[str, str] = {
     "Real Estate": "XLRE",
     "Utilities": "XLU",
     "Communication Services": "XLC",
+}
+
+# iShares S&P/TSX sector ETFs — benchmark: XIU.TO
+# Sectors without a liquid TSX-specific ETF are omitted; those stocks fall back to 5.0.
+SECTOR_ETF_MAP_CA: dict[str, str] = {
+    "Financial Services": "XFN.TO",
+    "Energy":             "XEG.TO",
+    "Materials":          "XMA.TO",
+    "Technology":         "XIT.TO",
+    "Real Estate":        "XRE.TO",
+    "Utilities":          "XUT.TO",
+    "Consumer Defensive": "XST.TO",
+    "Industrials":        "ZIN.TO",
 }
 
 
@@ -96,7 +110,11 @@ class PremarketScreener:
         # Pre-fetch sector ETF performance once (~12 API calls) before main loop
         logger.info("Fetching sector ETF performance…")
         sector_perf = await self._fetch_sector_performance()
-        logger.info("Sector ETF data ready: %s", list(sector_perf.keys()))
+        logger.info(
+            "Sector ETF data ready — US: %d sectors, CA: %d sectors",
+            len(sector_perf.get("us", {})),
+            len(sector_perf.get("ca", {})),
+        )
 
         scored: list[dict] = []
         total = len(stocks)
@@ -215,8 +233,8 @@ class PremarketScreener:
         # 5. News score — Finnhub article count (last 3 days)
         news_score, has_catalyst = await self._fetch_news_score(stock.symbol)
 
-        # 6. Sector score — sector ETF performance relative to SPY
-        sector_score = self._calc_sector_score(stock.sector, sector_perf)
+        # 6. Sector score — sector ETF performance relative to market benchmark
+        sector_score = self._calc_sector_score(stock.sector, stock.exchange, sector_perf)
 
         # Composite
         composite = (
@@ -326,30 +344,47 @@ class PremarketScreener:
 
         return score, has_catalyst
 
-    async def _fetch_sector_performance(self) -> dict[str, float]:
+    async def _fetch_sector_performance(self) -> dict[str, dict[str, float]]:
         """
-        Fetch 5-day return for each SPDR sector ETF relative to SPY.
-        Returns a mapping of sector name → relative return (%).
-        Called once before the main scan loop (~12 API calls).
+        Fetch 5-day sector ETF returns relative to their market benchmark.
+
+        US stocks: SPDR ETFs vs SPY   (~12 Massive calls)
+        CA stocks: iShares TSX ETFs vs XIU.TO  (~9 yfinance calls)
+
+        Returns {"us": {sector: rel_return}, "ca": {sector: rel_return}}.
+        Either sub-dict may be empty if the benchmark fetch fails.
         """
+        result: dict[str, dict[str, float]] = {"us": {}, "ca": {}}
+
+        # --- US sector ETFs vs SPY ---
         try:
             spy_daily = await self.data.get_daily("SPY")
             spy_return = self._calc_5d_return(spy_daily)
+            for sector, etf in SECTOR_ETF_MAP_US.items():
+                try:
+                    etf_daily = await self.data.get_daily(etf)
+                    result["us"][sector] = self._calc_5d_return(etf_daily) - spy_return
+                except Exception as e:
+                    logger.debug("US sector ETF %s failed: %s", etf, e)
+                    result["us"][sector] = 0.0
         except Exception as e:
-            logger.warning("Could not fetch SPY data for sector scoring: %s", e)
-            return {}
+            logger.warning("Could not fetch SPY — US sector scores will be neutral: %s", e)
 
-        perf: dict[str, float] = {}
-        for sector, etf in SECTOR_ETF_MAP.items():
-            try:
-                etf_daily = await self.data.get_daily(etf)
-                etf_return = self._calc_5d_return(etf_daily)
-                perf[sector] = etf_return - spy_return  # relative to broad market
-            except Exception as e:
-                logger.debug("Sector ETF %s failed: %s", etf, e)
-                perf[sector] = 0.0
+        # --- Canadian sector ETFs vs XIU.TO ---
+        try:
+            xiu_daily = await self.data.get_daily("XIU.TO")
+            xiu_return = self._calc_5d_return(xiu_daily)
+            for sector, etf in SECTOR_ETF_MAP_CA.items():
+                try:
+                    etf_daily = await self.data.get_daily(etf)
+                    result["ca"][sector] = self._calc_5d_return(etf_daily) - xiu_return
+                except Exception as e:
+                    logger.debug("CA sector ETF %s failed: %s", etf, e)
+                    result["ca"][sector] = 0.0
+        except Exception as e:
+            logger.warning("Could not fetch XIU.TO — CA sector scores will be neutral: %s", e)
 
-        return perf
+        return result
 
     @staticmethod
     def _calc_5d_return(daily: list[dict]) -> float:
@@ -359,15 +394,25 @@ class PremarketScreener:
         closes = [b["close"] for b in daily]
         return (closes[-1] - closes[-6]) / closes[-6] * 100
 
-    def _calc_sector_score(self, sector: str | None, sector_perf: dict[str, float]) -> float:
+    def _calc_sector_score(
+        self,
+        sector: str | None,
+        exchange: str | None,
+        sector_perf: dict[str, dict[str, float]],
+    ) -> float:
         """
         Map sector relative return to a 0-10 score.
-        +5% vs SPY → 10, −5% vs SPY → 0, neutral (0%) → 5.
+        +5% vs benchmark → 10, −5% → 0, neutral (0%) → 5.
+
+        TSX stocks use Canadian sector ETFs (XIU.TO benchmark).
+        All others use US SPDR ETFs (SPY benchmark).
         """
-        if not sector_perf:
-            # Sector data unavailable — return neutral score
+        is_tsx = (exchange or "").upper() in ("TSX", "TSX-V") or (sector or "").endswith(".TO")
+        perf_map = sector_perf.get("ca" if is_tsx else "us", {})
+
+        if not perf_map:
             return 5.0
-        rel_return = sector_perf.get(sector or "", 0.0)
-        # Linear: 1% relative return = +1 point, clamp to [0, 10]
+
+        rel_return = perf_map.get(sector or "", 0.0)
         score = 5.0 + rel_return
         return min(10.0, max(0.0, score))
