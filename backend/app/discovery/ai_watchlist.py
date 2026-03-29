@@ -112,7 +112,7 @@ async def _claude_pick(
     size: int,
 ) -> list[dict]:
     """Use Claude API to pick stocks from screener results."""
-    import anthropic
+    from anthropic import AsyncAnthropic
 
     # Format screener data for the prompt
     screener_data = "\n".join(
@@ -131,15 +131,21 @@ async def _claude_pick(
         screener_data=screener_data,
     )
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    message = client.messages.create(
-        model="claude-sonnet-4-5-20251001",
+    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    message = await client.messages.create(
+        model="claude-sonnet-4-6",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
 
-    # Parse response
-    response_text = message.content[0].text
+    # Parse response — strip markdown code fences if present
+    response_text = message.content[0].text.strip()
+    if response_text.startswith("```"):
+        response_text = response_text.split("```")[1]
+        if response_text.startswith("json"):
+            response_text = response_text[4:]
+        response_text = response_text.strip()
+
     try:
         data = json.loads(response_text)
         picks = data.get("picks", [])[:size]
