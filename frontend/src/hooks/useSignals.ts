@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Signal } from '../types/market';
 import { fetchSignals } from '../services/api';
+
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — matches backend cache TTL
 
 interface UseSignalsResult {
   signals: Signal[];
   loading: boolean;
   error: string | null;
+  secondsUntilRefresh: number;
   refresh: () => void;
   applyLiveUpdate: (incoming: Signal[]) => void;
 }
@@ -14,6 +17,13 @@ export function useSignals(): UseSignalsResult {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(POLL_INTERVAL_MS / 1000);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const resetCountdown = useCallback(() => {
+    setSecondsUntilRefresh(POLL_INTERVAL_MS / 1000);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -25,17 +35,44 @@ export function useSignals(): UseSignalsResult {
       setError(err instanceof Error ? err.message : 'Failed to fetch signals');
     } finally {
       setLoading(false);
+      resetCountdown();
     }
-  }, []);
+  }, [resetCountdown]);
+
+  // Silent refresh for polling — no loading spinner flicker
+  const poll = useCallback(async () => {
+    try {
+      const data = await fetchSignals();
+      setSignals(data.signals);
+    } catch {
+      // Silently ignore poll failures — next poll will retry
+    }
+    resetCountdown();
+  }, [resetCountdown]);
 
   useEffect(() => {
     load();
-  }, [load]);
+    intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    countdownRef.current = setInterval(() => {
+      setSecondsUntilRefresh((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [load, poll]);
+
+  const refresh = useCallback(() => {
+    // Reset poll timer on manual refresh
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    load();
+    intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+  }, [load, poll]);
 
   // Merge a live push: update existing symbols in-place, preserve ordering by conviction.
   const applyLiveUpdate = useCallback((incoming: Signal[]) => {
     setSignals(incoming);
   }, []);
 
-  return { signals, loading, error, refresh: load, applyLiveUpdate };
+  return { signals, loading, error, secondsUntilRefresh, refresh, applyLiveUpdate };
 }

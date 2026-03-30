@@ -1,19 +1,29 @@
 import { SignalBadge } from '../common/SignalBadge';
 import type { Signal } from '../../types/market';
 
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 interface WatchlistProps {
   signals: Signal[];
   selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
+  secondsUntilRefresh: number;
 }
 
-export function Watchlist({ signals, selectedSymbol, onSelect }: WatchlistProps) {
+export function Watchlist({ signals, selectedSymbol, onSelect, secondsUntilRefresh }: WatchlistProps) {
   return (
     <aside className="w-72 border-r border-zinc-800 bg-zinc-900/50 flex flex-col">
-      <div className="px-3 py-2 border-b border-zinc-800">
+      <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
         <h2 className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
           Watchlist ({signals.length})
         </h2>
+        <span className="text-[10px] font-mono text-zinc-600" title="Time until next refresh">
+          {formatCountdown(secondsUntilRefresh)}
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto">
