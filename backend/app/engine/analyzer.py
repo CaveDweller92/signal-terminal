@@ -21,6 +21,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 from app.engine.data_provider import DataProvider
+from app.engine.fundamental_analyzer import FundamentalAnalyzer
 from app.engine.sentiment_analyzer import SentimentAnalyzer
 from app.engine.indicators import (
     calc_atr,
@@ -68,6 +69,11 @@ class SignalAnalyzer:
             self._sentiment = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
         else:
             self._sentiment = None
+        # Real fundamentals when Finnhub key is configured; simulated otherwise
+        if settings.finnhub_api_key:
+            self._fundamentals = FundamentalAnalyzer(settings.finnhub_api_key)
+        else:
+            self._fundamentals = None
 
     async def analyze(self, symbol: str) -> dict:
         """
@@ -125,8 +131,13 @@ class SignalAnalyzer:
         else:
             sentiment_score = self._simulated_sentiment(symbol)
             sentiment_reasons = self._sentiment_reasons(sentiment_score)
-        fundamental_score = self._simulated_fundamental(symbol)
-        fundamental_reasons = self._fundamental_reasons(fundamental_score)
+        if self._fundamentals is not None:
+            fundamental_data = await self._fundamentals.get_fundamentals(symbol)
+            fundamental_score = fundamental_data["score"]
+            fundamental_reasons = fundamental_data["reasons"]
+        else:
+            fundamental_score = self._simulated_fundamental(symbol)
+            fundamental_reasons = self._fundamental_reasons(fundamental_score)
 
         # --- Composite conviction ---
         conviction = (

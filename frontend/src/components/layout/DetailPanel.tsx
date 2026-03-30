@@ -144,13 +144,10 @@ function SentimentContent({ signal }: { signal: Signal }) {
       <StatBox
         label="Sentiment Score"
         value={signal.sentiment_score.toFixed(2)}
-        subValue="Phase 1: Simulated"
+        subValue="Range: -3 to +3"
         positive={signal.sentiment_score > 0}
       />
       <ReasonsList title="Sentiment Analysis" reasons={signal.reasons.sentiment} />
-      <p className="text-xs text-zinc-600 italic">
-        Real sentiment analysis via Claude API will be available in Phase 3.
-      </p>
     </div>
   );
 }
@@ -161,13 +158,10 @@ function FundamentalContent({ signal }: { signal: Signal }) {
       <StatBox
         label="Fundamental Score"
         value={signal.fundamental_score.toFixed(2)}
-        subValue="Phase 1: Simulated"
+        subValue="Range: -2 to +2"
         positive={signal.fundamental_score > 0}
       />
       <ReasonsList title="Fundamental Analysis" reasons={signal.reasons.fundamental} />
-      <p className="text-xs text-zinc-600 italic">
-        Real fundamental data will be integrated in Phase 3.
-      </p>
     </div>
   );
 }
