@@ -40,6 +40,8 @@ export interface Signal {
 export interface SignalListResponse {
   signals: Signal[];
   count: number;
+  cached?: boolean;
+  fetched_at?: string;
 }
 
 export interface RegimeState {

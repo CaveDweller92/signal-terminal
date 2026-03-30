@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Signal } from '../types/market';
 import { fetchSignals } from '../services/api';
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — matches backend cache TTL
+const POLL_INTERVAL_MS = 60 * 1000; // 1 minute — matches backend cache TTL
 
 interface UseSignalsResult {
   signals: Signal[];
   loading: boolean;
   error: string | null;
   secondsUntilRefresh: number;
+  fetchedAt: string | null;
   refresh: () => void;
   applyLiveUpdate: (incoming: Signal[]) => void;
 }
@@ -18,6 +19,7 @@ export function useSignals(): UseSignalsResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(POLL_INTERVAL_MS / 1000);
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -31,6 +33,7 @@ export function useSignals(): UseSignalsResult {
     try {
       const data = await fetchSignals();
       setSignals(data.signals);
+      setFetchedAt(data.fetched_at ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch signals');
     } finally {
@@ -44,6 +47,7 @@ export function useSignals(): UseSignalsResult {
     try {
       const data = await fetchSignals();
       setSignals(data.signals);
+      setFetchedAt(data.fetched_at ?? null);
     } catch {
       // Silently ignore poll failures — next poll will retry
     }
@@ -74,5 +78,5 @@ export function useSignals(): UseSignalsResult {
     setSignals(incoming);
   }, []);
 
-  return { signals, loading, error, secondsUntilRefresh, refresh, applyLiveUpdate };
+  return { signals, loading, error, secondsUntilRefresh, fetchedAt, refresh, applyLiveUpdate };
 }

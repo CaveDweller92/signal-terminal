@@ -47,10 +47,10 @@ celery.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=6, day_of_week="1-5"),
     },
 
-    # Position Monitoring (every 30 seconds during market hours)
+    # Position Monitoring (every 60 seconds during market hours)
     "position-monitor": {
         "task": "app.tasks.position_monitor.monitor_positions",
-        "schedule": 30.0,
+        "schedule": 60.0,
     },
 
     # Regime Detection (every 30 min during market hours)

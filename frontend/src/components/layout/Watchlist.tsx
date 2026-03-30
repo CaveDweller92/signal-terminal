@@ -7,23 +7,41 @@ function formatCountdown(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function formatFetchedAt(iso: string): string | null {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 interface WatchlistProps {
   signals: Signal[];
   selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
   secondsUntilRefresh: number;
+  fetchedAt: string | null;
 }
 
-export function Watchlist({ signals, selectedSymbol, onSelect, secondsUntilRefresh }: WatchlistProps) {
+export function Watchlist({ signals, selectedSymbol, onSelect, secondsUntilRefresh, fetchedAt }: WatchlistProps) {
   return (
     <aside className="w-72 border-r border-zinc-800 bg-zinc-900/50 flex flex-col">
-      <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
-        <h2 className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
-          Watchlist ({signals.length})
-        </h2>
-        <span className="text-[10px] font-mono text-zinc-600" title="Time until next refresh">
-          {formatCountdown(secondsUntilRefresh)}
-        </span>
+      <div className="px-3 py-2 border-b border-zinc-800">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+            Watchlist ({signals.length})
+          </h2>
+          <span className="text-[10px] font-mono text-zinc-600" title="Time until next refresh">
+            {formatCountdown(secondsUntilRefresh)}
+          </span>
+        </div>
+        {fetchedAt && formatFetchedAt(fetchedAt) && (
+          <div className="text-[9px] font-mono text-zinc-600 mt-0.5">
+            Last updated: {formatFetchedAt(fetchedAt)}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">

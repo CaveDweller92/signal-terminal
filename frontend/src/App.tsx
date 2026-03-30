@@ -14,7 +14,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 type MainTab = 'signals' | 'positions' | 'alerts' | 'discovery' | 'insights';
 
 function App() {
-  const { signals, loading, error, secondsUntilRefresh, refresh: refreshSignals, applyLiveUpdate } = useSignals();
+  const { signals, loading, error, secondsUntilRefresh, fetchedAt, refresh: refreshSignals, applyLiveUpdate } = useSignals();
   const { regime, refresh: refreshRegime } = useRegime();
   const { positions, loading: posLoading, refresh: refreshPositions, addPosition, closePos, updatePosition } = usePositions();
   const { connected, alerts, clearAlerts, onPositionUpdate, onSignalUpdate } = useWebSocket();
@@ -98,6 +98,7 @@ function App() {
               selectedSymbol={selectedSymbol}
               onSelect={setSelectedSymbol}
               secondsUntilRefresh={secondsUntilRefresh}
+              fetchedAt={fetchedAt}
             />
             <main className="flex-1 flex">
               {error && (

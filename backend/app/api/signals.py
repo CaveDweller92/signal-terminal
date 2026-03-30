@@ -7,7 +7,7 @@ GET /api/signals/{symbol}  — analyze a single symbol (cached per-symbol)
 
 import json
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
-_CACHE_TTL = 5 * 60  # 5 minutes
+_CACHE_TTL = 60  # 1 minute
 
 _redis = None
 
@@ -109,7 +109,8 @@ async def get_signals(
             results.append(signal)
 
     results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
-    data = {"signals": results, "count": len(results)}
+    now = datetime.now(timezone.utc).isoformat()
+    data = {"signals": results, "count": len(results), "fetched_at": now}
 
     # Store in Redis
     try:
@@ -119,6 +120,7 @@ async def get_signals(
         logger.debug("Redis cache write failed: %s", e)
 
     data["cached"] = False
+    logger.info("Signals refreshed: %d symbols at %s", len(results), now)
     return data
 
 
