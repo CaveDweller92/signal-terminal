@@ -119,6 +119,7 @@ class PremarketScreener:
         )
 
         scored: list[dict] = []
+        failed: list[str] = []
         saved_rows: dict[str, ScreenerResult] = {}  # symbol → row, for return value
         total = len(stocks)
 
@@ -134,6 +135,7 @@ class PremarketScreener:
             for stock, result in zip(batch, results):
                 if isinstance(result, Exception):
                     logger.debug("Skipping %s: %s", stock.symbol, result)
+                    failed.append(stock.symbol)
                     continue
                 result["symbol"] = stock.symbol
                 result["exchange"] = stock.exchange
@@ -174,6 +176,8 @@ class PremarketScreener:
                     await asyncio.sleep(wait)
 
         await db.commit()
+        if failed:
+            logger.warning("Screener: %d symbols failed: %s", len(failed), ", ".join(failed))
         logger.info("Screener complete: %d stocks scored and saved", len(scored))
 
         # Return top N for callers that need an immediate ranked list
