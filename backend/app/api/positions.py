@@ -85,6 +85,18 @@ async def update_exit_levels(
     return PositionResponse.model_validate(position)
 
 
+@router.get("/alerts/recent", response_model=list[ExitSignalResponse])
+async def get_recent_alerts(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    """Get the most recent exit alerts across all positions."""
+    result = await db.execute(
+        select(ExitSignal)
+        .order_by(ExitSignal.created_at.desc())
+        .limit(limit)
+    )
+    signals = list(result.scalars().all())
+    return [ExitSignalResponse.model_validate(s) for s in signals]
+
+
 @router.get("/{position_id}/signals", response_model=list[ExitSignalResponse])
 async def get_exit_signals(position_id: int, db: AsyncSession = Depends(get_db)):
     """Get all exit signals generated for a position."""

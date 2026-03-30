@@ -82,6 +82,10 @@ export function fetchPositionSignals(id: number): Promise<ExitSignal[]> {
   return fetchJSON<ExitSignal[]>(`/positions/${id}/signals`);
 }
 
+export function fetchRecentAlerts(limit = 100): Promise<ExitSignal[]> {
+  return fetchJSON<ExitSignal[]>(`/positions/alerts/recent?limit=${limit}`);
+}
+
 export function fetchTradeHistory(days = 30): Promise<Position[]> {
   return fetchJSON<Position[]>(`/positions/history?days=${days}`);
 }

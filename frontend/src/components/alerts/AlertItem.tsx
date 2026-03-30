@@ -28,7 +28,10 @@ const EXIT_TYPE_ICONS: Record<string, string> = {
 };
 
 export function AlertItem({ alert }: AlertItemProps) {
-  const timeStr = new Date(alert.created_at).toLocaleTimeString(undefined, {
+  // Backend stores UTC without timezone suffix — append Z so the browser
+  // correctly converts to the user's local time
+  const utcTimestamp = alert.created_at.endsWith('Z') ? alert.created_at : `${alert.created_at}Z`;
+  const timeStr = new Date(utcTimestamp).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
