@@ -14,10 +14,10 @@ def refresh_all_universes():
 
 
 async def _refresh():
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.discovery.universe import seed_universe
 
-    async with async_session() as db:
+    async with task_session() as db:
         counts = await seed_universe(db)
         await db.commit()
         total = sum(counts.values())

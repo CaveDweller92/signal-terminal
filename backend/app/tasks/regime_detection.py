@@ -14,11 +14,11 @@ def run_regime_detection():
 
 
 async def _detect():
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.engine.data_provider import get_data_provider
     from app.adaptation import on_regime_check
 
-    async with async_session() as db:
+    async with task_session() as db:
         result = await on_regime_check(db, get_data_provider())
         await db.commit()
 

@@ -14,12 +14,12 @@ def build_daily_watchlist():
 
 
 async def _build_watchlist():
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.engine.data_provider import get_data_provider
     from app.engine.regime import RegimeDetector
     from app.discovery.ai_watchlist import build_watchlist
 
-    async with async_session() as db:
+    async with task_session() as db:
         provider = get_data_provider()
         detector = RegimeDetector(provider)
         regime_result = await detector.detect()

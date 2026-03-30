@@ -30,11 +30,11 @@ def monitor_positions():
 
 
 async def _monitor():
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.engine.data_provider import get_data_provider
     from app.positions.monitor import PositionMonitor
 
-    async with async_session() as db:
+    async with task_session() as db:
         monitor = PositionMonitor(db, get_data_provider())
         alerts = await monitor.check_all_positions()
         await db.commit()

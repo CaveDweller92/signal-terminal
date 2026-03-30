@@ -14,10 +14,10 @@ def run_daily_meta_review():
 
 
 async def _review():
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.adaptation import on_daily_review
 
-    async with async_session() as db:
+    async with task_session() as db:
         result = await on_daily_review(db)
         await db.commit()
         logger.info(f"Daily meta-review complete: {result['summary'][:100]}")

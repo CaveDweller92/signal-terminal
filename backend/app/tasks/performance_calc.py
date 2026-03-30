@@ -16,7 +16,7 @@ def calc_daily_performance():
 
 async def _calc():
     from sqlalchemy import select, func, delete
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.models.signal import Signal
     from app.models.position import Position
     from app.models.regime_log import RegimeLog
@@ -24,7 +24,7 @@ async def _calc():
 
     today = date.today()
 
-    async with async_session() as db:
+    async with task_session() as db:
         # Clear existing for today (idempotent)
         await db.execute(
             delete(DailyPerformance).where(DailyPerformance.perf_date == today)

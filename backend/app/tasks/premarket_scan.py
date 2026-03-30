@@ -17,12 +17,12 @@ async def _run_scan():
     import logging as _logging
     _logging.basicConfig(level=_logging.INFO, format="%(levelname)s  %(message)s")
 
-    from app.db.database import async_session
+    from app.db.database import task_session
     from app.engine.data_provider import get_data_provider
     from app.discovery.universe import get_active_symbols
     from app.discovery.screener import PremarketScreener
 
-    async with async_session() as db:
+    async with task_session() as db:
         stocks = await get_active_symbols(db)
         if not stocks:
             logger.warning("No stocks in universe — skipping scan")

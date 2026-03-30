@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -18,6 +20,36 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+@asynccontextmanager
+async def task_session():
+    """Create a disposable engine + session for Celery tasks.
+
+    Each asyncio.run() in a Celery worker creates a new event loop.
+    The module-level engine holds pooled connections bound to a previous
+    (now-closed) loop, causing 'Future attached to a different loop' errors.
+    This helper creates a fresh engine per task invocation and disposes it
+    on exit, so connections never leak across loops.
+    """
+    task_engine = create_async_engine(
+        settings.database_url,
+        echo=False,
+        pool_size=5,
+        max_overflow=5,
+        pool_pre_ping=True,
+    )
+    task_session_factory = async_sessionmaker(
+        task_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with task_session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+    await task_engine.dispose()
 
 
 # Base class for all ORM models
