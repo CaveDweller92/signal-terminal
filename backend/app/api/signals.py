@@ -1,22 +1,39 @@
 """
 Signal API routes.
 
-GET /api/signals           — analyze today's watchlist symbols, return signals
-GET /api/signals/{symbol}  — analyze a single symbol
+GET /api/signals           — return cached signals (re-analyzed every 5 min)
+GET /api/signals/{symbol}  — analyze a single symbol (cached per-symbol)
 """
 
+import json
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 
+from app.config import settings
 from app.db.database import async_session
 from app.engine.analyzer import SignalAnalyzer
 from app.engine.data_provider import get_data_provider
 from app.models.screener_result import ScreenerResult
 from app.models.watchlist import DailyWatchlist
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/signals", tags=["signals"])
+
+_CACHE_TTL = 5 * 60  # 5 minutes
+
+_redis = None
+
+
+async def _get_redis():
+    global _redis
+    if _redis is None:
+        import redis.asyncio as aioredis
+        _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    return _redis
 
 
 async def _resolve_symbols() -> list[str]:
@@ -52,12 +69,13 @@ async def get_signals(
         None,
         description="Comma-separated symbols. Defaults to today's watchlist.",
     ),
+    refresh: bool = Query(False, description="Force re-analysis, ignoring cache."),
 ):
     """
     Analyze multiple symbols and return their signals.
 
-    Returns a list of signal objects sorted by absolute conviction
-    (strongest signals first).
+    Results are cached in Redis for 5 minutes to avoid repeated
+    API calls (Finnhub + Claude sentiment) on every page load.
     """
     if symbols:
         symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
@@ -67,6 +85,20 @@ async def get_signals(
     if not symbol_list:
         return {"signals": [], "count": 0, "message": "No watchlist yet — run the screener first."}
 
+    # Try Redis cache first
+    cache_key = "signals:" + ",".join(sorted(symbol_list))
+    if not refresh:
+        try:
+            r = await _get_redis()
+            cached = await r.get(cache_key)
+            if cached:
+                data = json.loads(cached)
+                data["cached"] = True
+                return data
+        except Exception as e:
+            logger.debug("Redis cache read failed: %s", e)
+
+    # Cache miss — run analysis
     provider = get_data_provider()
     analyzer = SignalAnalyzer(provider)
 
@@ -77,12 +109,44 @@ async def get_signals(
             results.append(signal)
 
     results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
-    return {"signals": results, "count": len(results)}
+    data = {"signals": results, "count": len(results)}
+
+    # Store in Redis
+    try:
+        r = await _get_redis()
+        await r.set(cache_key, json.dumps(data), ex=_CACHE_TTL)
+    except Exception as e:
+        logger.debug("Redis cache write failed: %s", e)
+
+    data["cached"] = False
+    return data
 
 
 @router.get("/{symbol}")
 async def get_signal(symbol: str):
-    """Analyze a single symbol."""
+    """Analyze a single symbol (cached per-symbol for 5 min)."""
+    symbol = symbol.upper()
+    cache_key = f"signal:{symbol}"
+
+    try:
+        r = await _get_redis()
+        cached = await r.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            data["cached"] = True
+            return data
+    except Exception as e:
+        logger.debug("Redis cache read failed: %s", e)
+
     provider = get_data_provider()
     analyzer = SignalAnalyzer(provider)
-    return await analyzer.analyze(symbol.upper())
+    data = await analyzer.analyze(symbol)
+
+    if data is not None:
+        try:
+            r = await _get_redis()
+            await r.set(cache_key, json.dumps(data), ex=_CACHE_TTL)
+        except Exception as e:
+            logger.debug("Redis cache write failed: %s", e)
+
+    return data

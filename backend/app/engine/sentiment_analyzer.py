@@ -125,6 +125,12 @@ Guidelines:
             )
             content = message.content[0].text.strip()
 
+            # Strip markdown code fences if Claude wraps the JSON
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+                if content.endswith("```"):
+                    content = content[:-3].strip()
+
             # Parse JSON response
             parsed = json.loads(content)
             score = float(parsed.get("score", 0.0))
