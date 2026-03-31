@@ -24,7 +24,7 @@ from datetime import date, timedelta
 
 import httpx
 import numpy as np
-from sqlalchemy import delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -75,17 +75,10 @@ class PremarketScreener:
         "sector": 0.15,
     }
 
-    # Rate limiting: each stock = 2 Massive API calls (intraday + daily).
-    # Keep total rate at or below MASSIVE_MAX_CALLS_PER_MIN.
-    BATCH_SIZE = 10
-    MASSIVE_CALLS_PER_STOCK = 2
-    MASSIVE_MAX_CALLS_PER_MIN = 80  # stay below the 100/min hard limit
-
-    # seconds to wait after each batch so we don't exceed the rate cap
-    # BATCH_SIZE * CALLS_PER_STOCK calls per batch, spread over BATCH_DELAY_SECS
-    BATCH_DELAY_SECS: float = (
-        BATCH_SIZE * MASSIVE_CALLS_PER_STOCK / MASSIVE_MAX_CALLS_PER_MIN * 60
-    )  # = 10 * 2 / 80 * 60 = 15 s
+    # Massive has unlimited API calls. Finnhub free tier is 60 calls/min.
+    # 40 stocks/batch × 1 Finnhub call each, with 45s delay ≈ 53 calls/min — safe.
+    BATCH_SIZE = 40
+    BATCH_DELAY_SECS: float = 45.0
 
     def __init__(self, data_provider: DataProvider):
         self.data = data_provider
@@ -103,11 +96,6 @@ class PremarketScreener:
         Returns the top_n ScreenerResult objects by composite score.
         """
         today = date.today()
-
-        # Clear today's existing results (idempotent)
-        await db.execute(
-            delete(ScreenerResult).where(ScreenerResult.scan_date == today)
-        )
 
         # Pre-fetch sector ETF performance once (~12 API calls) before main loop
         logger.info("Fetching sector ETF performance…")
@@ -142,7 +130,7 @@ class PremarketScreener:
                 result["sector_name"] = stock.sector
                 scored.append(result)
 
-                row = ScreenerResult(
+                row_data = dict(
                     scan_date=today,
                     symbol=result["symbol"],
                     exchange=result["exchange"],
@@ -158,7 +146,14 @@ class PremarketScreener:
                     sector=result["sector_name"],
                     has_catalyst=result.get("has_catalyst", False),
                 )
-                db.add(row)
+                # Upsert — safe for concurrent/rerun scans
+                stmt = pg_insert(ScreenerResult).values(**row_data)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["scan_date", "symbol"],
+                    set_={k: stmt.excluded[k] for k in row_data if k not in ("scan_date", "symbol")},
+                ).returning(ScreenerResult)
+                upsert_result = await db.execute(stmt)
+                row = upsert_result.scalar_one()
                 saved_rows[result["symbol"]] = row
                 batch_results.append(row)
 

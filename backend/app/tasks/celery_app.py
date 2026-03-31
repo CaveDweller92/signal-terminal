@@ -44,7 +44,7 @@ celery.conf.beat_schedule = {
     },
     "watchlist-build": {
         "task": "app.tasks.watchlist_build.build_daily_watchlist",
-        "schedule": crontab(minute=0, hour=6, day_of_week="1-5"),
+        "schedule": crontab(minute=30, hour=7, day_of_week="1-5"),
     },
 
     # Position Monitoring (every 60 seconds during market hours)

@@ -31,3 +31,4 @@ class ScreenerResult(Base):
     has_catalyst: Mapped[bool] = mapped_column(Boolean, default=False)
     catalyst_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
