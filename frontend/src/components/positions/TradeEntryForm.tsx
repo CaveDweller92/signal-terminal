@@ -28,7 +28,7 @@ const INITIAL: FormState = {
   stop_loss_price: '',
   profit_target_price: '',
   use_atr_exits: true,
-  eod_exit_enabled: true,
+  eod_exit_enabled: false,
 };
 
 export function TradeEntryForm({ onSubmit, prefillSymbol, prefillPrice }: TradeEntryFormProps) {
@@ -221,7 +221,7 @@ export function TradeEntryForm({ onSubmit, prefillSymbol, prefillPrice }: TradeE
                   onChange={(e) => set('eod_exit_enabled', e.target.checked)}
                   className="accent-blue-500"
                 />
-                EOD exit
+                Auto-exit on close
               </label>
             </div>
           </details>

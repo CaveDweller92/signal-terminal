@@ -47,7 +47,7 @@ async def get_current_parameters(db: AsyncSession = Depends(get_db)):
             ema_fast=9,
             ema_slow=21,
             volume_multiplier=1.5,
-            min_signal_strength=2.0,
+            min_signal_strength=1.5,
             technical_weight=0.5,
             sentiment_weight=0.3,
             fundamental_weight=0.2,
@@ -55,7 +55,7 @@ async def get_current_parameters(db: AsyncSession = Depends(get_db)):
             atr_target_multiplier=settings.default_atr_multiplier_target,
             default_stop_loss_pct=settings.default_stop_loss_pct,
             default_profit_target_pct=settings.default_profit_target_pct,
-            max_hold_bars=settings.max_hold_bars,
+            max_hold_days=settings.max_hold_days,
             full_config=None,
             created_at=__import__("datetime").datetime.utcnow(),
         )

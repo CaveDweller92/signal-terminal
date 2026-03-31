@@ -17,7 +17,7 @@ export interface Position {
   use_atr_exits: boolean;
   atr_value_at_entry: number | null;
   eod_exit_enabled: boolean;
-  max_hold_bars: number | null;
+  max_hold_days: number | null;
 
   // Live tracking
   current_price: number | null;

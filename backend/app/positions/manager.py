@@ -37,9 +37,10 @@ class PositionManager:
         entry_price = trade_input["entry_price"]
         direction = trade_input["direction"]
 
-        # Get current ATR for dynamic exit levels
+        # Get current ATR from daily bars — matches SignalAnalyzer
+        daily = await self.data.get_daily(symbol)
         bars = await self.data.get_intraday(symbol)
-        atr = self._calc_atr(bars)
+        atr = self._calc_atr(daily) if daily else self._calc_atr(bars)
 
         # Get current regime
         detector = RegimeDetector(self.data)
@@ -76,8 +77,8 @@ class PositionManager:
             atr_stop_multiplier=stop_mult,
             atr_target_multiplier=target_mult,
             atr_value_at_entry=round(atr, 4),
-            eod_exit_enabled=trade_input.get("eod_exit_enabled", True),
-            max_hold_bars=trade_input.get("max_hold_bars", settings.max_hold_bars),
+            eod_exit_enabled=trade_input.get("eod_exit_enabled", False),
+            max_hold_days=trade_input.get("max_hold_days", settings.max_hold_days),
 
             # Initial tracking
             current_price=entry_price,
@@ -135,7 +136,7 @@ class PositionManager:
             raise ValueError("Position not found or already closed")
 
         for field in ["stop_loss_price", "profit_target_price", "stop_loss_pct",
-                       "profit_target_pct", "eod_exit_enabled", "max_hold_bars"]:
+                       "profit_target_pct", "eod_exit_enabled", "max_hold_days"]:
             if field in updates and updates[field] is not None:
                 setattr(position, field, updates[field])
 

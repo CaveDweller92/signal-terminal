@@ -72,7 +72,7 @@ export function CurrentParameters({ snapshot }: CurrentParametersProps) {
             value={snapshot.atr_target_multiplier.toFixed(2)}
             positive={true}
           />
-          <StatBox label="Max Hold Bars" value={snapshot.max_hold_bars} />
+          <StatBox label="Max Hold Bars" value={snapshot.max_hold_days} />
           <StatBox
             label="R/R Ratio"
             value={(snapshot.default_profit_target_pct / snapshot.default_stop_loss_pct).toFixed(2)}

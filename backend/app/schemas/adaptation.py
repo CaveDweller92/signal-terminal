@@ -25,7 +25,7 @@ class ParameterSnapshotResponse(BaseModel):
     atr_target_multiplier: float
     default_stop_loss_pct: float
     default_profit_target_pct: float
-    max_hold_bars: int
+    max_hold_days: int
 
     full_config: dict | None = None
     created_at: datetime

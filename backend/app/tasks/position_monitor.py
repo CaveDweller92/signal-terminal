@@ -1,31 +1,15 @@
-"""Position monitor task — runs every 30 seconds during market hours."""
+"""Position monitor task — runs 3x daily during market days (swing trading)."""
 
 import asyncio
 import logging
-from datetime import datetime
-
-import pytz
 
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
 
 
-def _is_market_hours() -> bool:
-    """Check if we're within market hours (9:30 AM - 4:00 PM ET, weekdays)."""
-    et = pytz.timezone("America/New_York")
-    now = datetime.now(et)
-    if now.weekday() >= 5:
-        return False
-    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
-    return market_open <= now <= market_close
-
-
 @celery.task(name="app.tasks.position_monitor.monitor_positions")
 def monitor_positions():
-    if not _is_market_hours():
-        return
     asyncio.run(_monitor())
 
 

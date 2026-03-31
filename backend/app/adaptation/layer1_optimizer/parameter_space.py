@@ -3,6 +3,8 @@ Parameter Space — defines the bounds and defaults for all tunable parameters.
 
 The optimizer searches within these bounds. Safety constraints prevent
 extreme values that could blow up the strategy.
+
+Swing trading: daily bars, max_hold_days = trading days.
 """
 
 from dataclasses import dataclass
@@ -17,26 +19,26 @@ class ParamBound:
     default: float
 
 
-# All tunable parameters with their bounds
+# All tunable parameters with their bounds (swing trading)
 PARAMETER_SPACE = [
     # Entry parameters
     ParamBound("rsi_period",            5,   30,  1,    14),
     ParamBound("rsi_overbought",        60,  90,  1,    70),
     ParamBound("rsi_oversold",          10,  40,  1,    30),
-    ParamBound("ema_fast",              3,   20,  1,    9),
-    ParamBound("ema_slow",              10,  50,  1,    21),
-    ParamBound("volume_multiplier",     1.0, 3.0, 0.1,  1.5),
-    ParamBound("min_signal_strength",   0.5, 4.0, 0.25, 2.0),
+    ParamBound("ema_fast",              5,   20,  1,    10),
+    ParamBound("ema_slow",              20,  100, 5,    50),
+    ParamBound("volume_multiplier",     1.0, 3.0, 0.1,  1.3),
+    ParamBound("min_signal_strength",   0.5, 3.0, 0.25, 1.5),
     ParamBound("technical_weight",      0.0, 1.0, 0.05, 0.5),
     ParamBound("sentiment_weight",      0.0, 1.0, 0.05, 0.3),
     ParamBound("fundamental_weight",    0.0, 1.0, 0.05, 0.2),
 
-    # Exit parameters (optimizer tunes these too)
-    ParamBound("atr_stop_multiplier",   0.5, 3.0, 0.1,  1.5),
-    ParamBound("atr_target_multiplier", 1.0, 5.0, 0.1,  2.5),
-    ParamBound("default_stop_loss_pct", 0.5, 5.0, 0.25, 2.0),
-    ParamBound("default_profit_target_pct", 1.0, 8.0, 0.25, 3.0),
-    ParamBound("max_hold_bars",         20,  120, 5,    60),
+    # Exit parameters (swing trading — daily ATR, hold in days)
+    ParamBound("atr_stop_multiplier",   1.0, 5.0, 0.25, 2.5),
+    ParamBound("atr_target_multiplier", 2.0, 8.0, 0.25, 4.0),
+    ParamBound("default_stop_loss_pct", 2.0, 15.0, 0.5, 5.0),
+    ParamBound("default_profit_target_pct", 5.0, 25.0, 0.5, 10.0),
+    ParamBound("max_hold_days",         5,   60,  5,    25),  # trading days
 ]
 
 PARAM_BOUNDS = {p.name: p for p in PARAMETER_SPACE}
@@ -67,7 +69,6 @@ def validate_weights(params: dict) -> dict:
     total = tw + sw + fw
 
     if total > 0 and abs(total - 1.0) > 0.01:
-        # Normalize
         params["technical_weight"] = round(tw / total, 3)
         params["sentiment_weight"] = round(sw / total, 3)
         params["fundamental_weight"] = round(fw / total, 3)

@@ -31,9 +31,9 @@ def make_position(**overrides):
         "profit_target_pct": 3.0,
         "use_atr_exits": True,
         "atr_value_at_entry": 3.5,
-        "eod_exit_enabled": True,
-        "max_hold_bars": 60,
-        "bars_held": 10,
+        "eod_exit_enabled": False,
+        "max_hold_days": 25,
+        "bars_held": 3,
         "unrealized_pnl_pct": 0.5,
         "high_since_entry": 192.0,
         "low_since_entry": 188.0,
@@ -231,8 +231,9 @@ class TestIndicatorReversal:
 class TestTimeBased:
     @pytest.mark.asyncio
     async def test_max_hold_triggers(self):
+        """Max hold fires when days held >= max_hold_days."""
         strategy = TimeBasedExitStrategy()
-        position = make_position(max_hold_bars=60, bars_held=60)
+        position = make_position(max_hold_days=25, bars_held=25)
         bar = make_bar(close=190.0)
         result = await strategy.evaluate(position, bar, [bar])
 
@@ -242,24 +243,23 @@ class TestTimeBased:
 
     @pytest.mark.asyncio
     async def test_no_trigger_under_max_hold(self):
+        """No alert when days held is below max."""
         strategy = TimeBasedExitStrategy()
-        position = make_position(max_hold_bars=60, bars_held=30)
+        position = make_position(max_hold_days=25, bars_held=10)
         bar = make_bar(close=190.0)
         result = await strategy.evaluate(position, bar, [bar])
 
-        # May return None or EOD warning depending on time of day
-        if result is not None:
-            assert result.exit_type in ("eod_warning", "max_hold_warning")
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_no_max_hold_if_disabled(self):
+        """No alert when max_hold_days is None."""
         strategy = TimeBasedExitStrategy()
-        position = make_position(max_hold_bars=None, bars_held=999, eod_exit_enabled=False)
+        position = make_position(max_hold_days=None, bars_held=999, eod_exit_enabled=False)
         bar = make_bar(close=190.0)
         result = await strategy.evaluate(position, bar, [bar])
 
-        # With EOD disabled and no max_hold, only weekend check applies
-        assert result is None or result.exit_type == "eod_warning"
+        assert result is None
 
 
 # === Composite ===
@@ -289,7 +289,7 @@ class TestComposite:
         position = make_position(
             direction="LONG",
             stop_loss_price=185.0,
-            max_hold_bars=5,
+            max_hold_days=5,
             bars_held=10,
         )
         bar = make_bar(close=183.0)

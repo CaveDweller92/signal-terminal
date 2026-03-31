@@ -9,8 +9,7 @@ Conviction is a weighted composite:
              + sentiment_score * sentiment_weight
              + fundamental_score * fundamental_weight
 
-Phase 1: sentiment and fundamental scores are simulated.
-Phase 3+ will plug in Claude sentiment analysis and real fundamentals.
+Swing trading mode: all indicators run on daily bars.
 """
 
 import logging
@@ -34,19 +33,19 @@ from app.engine.indicators import (
 
 
 class AnalyzerConfig:
-    """Strategy parameters — these get tuned by the adaptive system in Phase 5."""
+    """Strategy parameters — these get tuned by the adaptive system."""
 
     def __init__(self):
         self.rsi_period: int = 14
         self.rsi_overbought: int = 70
         self.rsi_oversold: int = 30
-        self.ema_fast: int = 9
-        self.ema_slow: int = 21
+        self.ema_fast: int = 10   # 10-day EMA (swing)
+        self.ema_slow: int = 50   # 50-day EMA (swing)
         self.macd_fast: int = 12
         self.macd_slow: int = 26
         self.macd_signal: int = 9
-        self.volume_multiplier: float = 1.5
-        self.min_signal_strength: float = 2.0
+        self.volume_multiplier: float = 1.3  # daily volume spikes are less extreme
+        self.min_signal_strength: float = 1.5  # swing signals develop gradually
 
         # Composite weights (must sum to 1.0)
         self.technical_weight: float = 0.5
@@ -94,36 +93,26 @@ class SignalAnalyzer:
         """
         Run full analysis on a symbol and return a signal dict.
 
-        Returns:
-            {
-                symbol, signal_type, conviction, tech_score,
-                sentiment_score, fundamental_score, price_at_signal,
-                reasons, suggested_stop_loss, suggested_profit_target,
-                atr_at_signal, indicators
-            }
+        Uses daily bars for all technical indicators (swing trading).
+        Intraday bars are only used as a fallback for current price.
         """
-        bars = await self.data.get_intraday(symbol)
         daily = await self.data.get_daily(symbol)
 
-        if not bars or not daily:
-            logger.warning(f"Analyzer: no data for {symbol} — skipping")
+        if not daily or len(daily) < 20:
+            logger.warning(f"Analyzer: insufficient daily data for {symbol} — skipping")
             return None
 
-        closes = np.array([b["close"] for b in bars])
-        highs = np.array([b["high"] for b in bars])
-        lows = np.array([b["low"] for b in bars])
-        volumes = np.array([b["volume"] for b in bars], dtype=float)
+        closes = np.array([b["close"] for b in daily])
+        highs = np.array([b["high"] for b in daily])
+        lows = np.array([b["low"] for b in daily])
+        volumes = np.array([b["volume"] for b in daily], dtype=float)
 
-        daily_closes = np.array([b["close"] for b in daily])
-        daily_highs = np.array([b["high"] for b in daily])
-        daily_lows = np.array([b["low"] for b in daily])
-
-        # --- Technical indicators ---
+        # --- Technical indicators (all on daily bars) ---
         rsi = calc_rsi(closes, self.config.rsi_period)
         macd_line, signal_line, histogram = calc_macd(
             closes, self.config.macd_fast, self.config.macd_slow, self.config.macd_signal
         )
-        atr = calc_atr(daily_highs, daily_lows, daily_closes)
+        atr = calc_atr(highs, lows, closes)
         vol_ratio = calc_volume_ratio(volumes)
         crossover = detect_ema_crossover(closes, self.config.ema_fast, self.config.ema_slow)
 
@@ -217,6 +206,7 @@ class SignalAnalyzer:
         """
         Score technical indicators on a -5 to +5 scale.
         Each indicator contributes a sub-score; they're summed and clamped.
+        Calibrated for daily bar data (swing trading).
         """
         score = 0.0
         reasons: list[str] = []
@@ -235,15 +225,17 @@ class SignalAnalyzer:
             score -= 1.0
             reasons.append(f"RSI approaching overbought ({rsi:.1f})")
 
-        # MACD histogram
+        # MACD histogram — daily values are much larger than intraday,
+        # so we normalize by current price to get a comparable scale
+        norm_hist = macd_hist / max(abs(macd_hist), 1.0) if macd_hist != 0 else 0
         if macd_hist > 0:
-            score += min(macd_hist * 100, 2.0)  # Cap contribution
-            reasons.append(f"MACD bullish (histogram {macd_hist:.4f})")
+            score += min(abs(norm_hist) * 2.0, 2.0)
+            reasons.append(f"MACD bullish (histogram {macd_hist:.2f})")
         elif macd_hist < 0:
-            score -= min(abs(macd_hist) * 100, 2.0)
-            reasons.append(f"MACD bearish (histogram {macd_hist:.4f})")
+            score -= min(abs(norm_hist) * 2.0, 2.0)
+            reasons.append(f"MACD bearish (histogram {macd_hist:.2f})")
 
-        # EMA crossover
+        # EMA crossover (10/50 for swing)
         if crossover["crossover"] == "bullish":
             if crossover["just_crossed"]:
                 score += 2.0
@@ -259,16 +251,15 @@ class SignalAnalyzer:
                 score -= 0.5
                 reasons.append("Bearish EMA trend")
 
-        # Volume confirmation
+        # Volume confirmation (daily volume)
         if vol_ratio >= 2.0:
-            # Amplify whatever direction we're leaning
             amplifier = 1.5 if score > 0 else -1.5 if score < 0 else 0
             score += amplifier
             reasons.append(f"Volume spike ({vol_ratio:.1f}x avg) confirms move")
         elif vol_ratio >= self.config.volume_multiplier:
             reasons.append(f"Above-average volume ({vol_ratio:.1f}x)")
         elif vol_ratio < 0.5:
-            score *= 0.7  # Discount signal on thin volume
+            score *= 0.7
             reasons.append(f"Low volume ({vol_ratio:.1f}x) — signal discounted")
 
         # Clamp to range
@@ -277,14 +268,12 @@ class SignalAnalyzer:
         return score, reasons
 
     def _simulated_sentiment(self, symbol: str) -> float:
-        """Phase 1 placeholder — deterministic 'sentiment' from symbol hash."""
         h = hash(f"sentiment_{symbol}") % 1000
-        return round((h / 1000) * 6 - 3, 2)  # Range: -3 to +3
+        return round((h / 1000) * 6 - 3, 2)
 
     def _simulated_fundamental(self, symbol: str) -> float:
-        """Phase 1 placeholder — deterministic 'fundamental' score."""
         h = hash(f"fundamental_{symbol}") % 1000
-        return round((h / 1000) * 4 - 2, 2)  # Range: -2 to +2
+        return round((h / 1000) * 4 - 2, 2)
 
     def _sentiment_reasons(self, score: float) -> list[str]:
         if score > 1:

@@ -6,7 +6,7 @@ import {
   closePosition,
 } from '../services/api';
 
-const POLL_INTERVAL_MS = 60_000; // 60 seconds — matches position monitor
+const POLL_INTERVAL_MS = 5 * 60_000; // 5 minutes — swing trading
 
 function isMarketOpen(): boolean {
   const now = new Date();

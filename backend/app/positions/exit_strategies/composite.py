@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class CompositeExitStrategy:
-    def __init__(self, strategies: list[ExitStrategy], cooldown_minutes: int = 5):
+    def __init__(self, strategies: list[ExitStrategy], cooldown_minutes: int = 1440):
         self.strategies = strategies
         self.cooldown_minutes = cooldown_minutes
         self._recent_alerts: dict[tuple[int, str], datetime] = {}

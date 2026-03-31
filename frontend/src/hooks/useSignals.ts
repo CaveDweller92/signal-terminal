@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Signal } from '../types/market';
 import { fetchSignals } from '../services/api';
 
-const POLL_INTERVAL_MS = 60 * 1000; // 1 minute — matches backend cache TTL
+const POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes — swing trading
 
 function isMarketOpen(): boolean {
   const now = new Date();

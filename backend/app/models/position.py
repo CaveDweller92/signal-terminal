@@ -41,8 +41,8 @@ class Position(Base):
     atr_stop_multiplier: Mapped[float | None] = mapped_column(Float, default=1.5)
     atr_target_multiplier: Mapped[float | None] = mapped_column(Float, default=2.5)
     atr_value_at_entry: Mapped[float | None] = mapped_column(Float, nullable=True)
-    eod_exit_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    max_hold_bars: Mapped[int | None] = mapped_column(Integer, default=60)
+    eod_exit_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_hold_days: Mapped[int | None] = mapped_column(Integer, default=25)
 
     # Live tracking (updated continuously by position monitor)
     current_price: Mapped[float | None] = mapped_column(Float, nullable=True)

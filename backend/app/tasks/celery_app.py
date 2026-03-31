@@ -1,5 +1,5 @@
 """
-Celery application configuration.
+Celery application configuration (Swing Trading).
 
 Uses Redis as both broker and result backend.
 Beat schedule runs the daily pipeline automatically.
@@ -37,36 +37,48 @@ celery.conf.update(
 )
 
 celery.conf.beat_schedule = {
-    # Stock Discovery
+    # Stock Discovery — dual screener (morning + evening)
     "premarket-scan": {
         "task": "app.tasks.premarket_scan.run_scan",
         "schedule": crontab(minute=0, hour=5, day_of_week="1-5"),
     },
+    "postclose-scan": {
+        "task": "app.tasks.premarket_scan.run_scan",
+        "schedule": crontab(minute=0, hour=17, day_of_week="1-5"),
+    },
     "watchlist-build": {
         "task": "app.tasks.watchlist_build.build_daily_watchlist",
-        "schedule": crontab(minute=30, hour=7, day_of_week="1-5"),
+        "schedule": crontab(minute=30, hour=17, day_of_week="1-5"),
     },
 
-    # Position Monitoring (every 60 seconds during market hours)
-    "position-monitor": {
+    # Position Monitoring — 3x daily (swing trading)
+    "position-monitor-morning": {
         "task": "app.tasks.position_monitor.monitor_positions",
-        "schedule": 60.0,
+        "schedule": crontab(minute=0, hour=10, day_of_week="1-5"),
+    },
+    "position-monitor-midday": {
+        "task": "app.tasks.position_monitor.monitor_positions",
+        "schedule": crontab(minute=0, hour=13, day_of_week="1-5"),
+    },
+    "position-monitor-close": {
+        "task": "app.tasks.position_monitor.monitor_positions",
+        "schedule": crontab(minute=15, hour=16, day_of_week="1-5"),
     },
 
-    # Regime Detection (every 30 min during market hours)
+    # Regime Detection — once daily after close
     "regime-detection": {
         "task": "app.tasks.regime_detection.run_regime_detection",
-        "schedule": crontab(minute="*/30", hour="9-16", day_of_week="1-5"),
+        "schedule": crontab(minute=0, hour=17, day_of_week="1-5"),
     },
 
     # Daily Wrap-up
     "daily-meta-review": {
         "task": "app.tasks.daily_meta_review.run_daily_meta_review",
-        "schedule": crontab(minute=15, hour=16, day_of_week="1-5"),
+        "schedule": crontab(minute=45, hour=17, day_of_week="1-5"),
     },
     "daily-performance": {
         "task": "app.tasks.performance_calc.calc_daily_performance",
-        "schedule": crontab(minute=30, hour=16, day_of_week="1-5"),
+        "schedule": crontab(minute=0, hour=18, day_of_week="1-5"),
     },
 
     # Maintenance

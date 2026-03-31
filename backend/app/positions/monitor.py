@@ -48,7 +48,7 @@ class PositionMonitor:
                 SentimentShiftStrategy(),
                 TimeBasedExitStrategy(),
             ],
-            cooldown_minutes=5,
+            cooldown_minutes=1440,  # 24 hours — swing trading
         )
 
     async def check_all_positions(self) -> list[dict]:
@@ -68,8 +68,8 @@ class PositionMonitor:
         return all_alerts
 
     async def _check_position(self, position: Position) -> list[dict]:
-        """Check one position against all exit strategies."""
-        bars = await self.data.get_intraday(position.symbol)
+        """Check one position against all exit strategies using daily bars."""
+        bars = await self.data.get_daily(position.symbol)
         if not bars:
             return []
 
@@ -88,7 +88,9 @@ class PositionMonitor:
         position.unrealized_pnl_pct = round(pnl_pct, 4)
         position.high_since_entry = max(position.high_since_entry or price, price)
         position.low_since_entry = min(position.low_since_entry or price, price)
-        position.bars_held = (position.bars_held or 0) + 1
+        # Count trading days held (not monitoring cycles)
+        days_held = (datetime.utcnow() - position.entry_time).days if position.entry_time else 0
+        position.bars_held = max(days_held, 1)
         position.last_updated = datetime.utcnow()
 
         # Run exit strategies

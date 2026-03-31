@@ -19,8 +19,8 @@ class TradeInput(BaseModel):
     stop_loss_pct: float | None = Field(None, ge=0.1, le=20.0)
     profit_target_pct: float | None = Field(None, ge=0.1, le=50.0)
     use_atr_exits: bool = True
-    eod_exit_enabled: bool = True
-    max_hold_bars: int | None = Field(None, ge=5, le=300)
+    eod_exit_enabled: bool = False
+    max_hold_days: int | None = Field(None, ge=1, le=120)  # trading days
 
 
 class CloseInput(BaseModel):
@@ -36,7 +36,7 @@ class ExitUpdateInput(BaseModel):
     stop_loss_pct: float | None = Field(None, ge=0.1, le=20.0)
     profit_target_pct: float | None = Field(None, ge=0.1, le=50.0)
     eod_exit_enabled: bool | None = None
-    max_hold_bars: int | None = Field(None, ge=5, le=300)
+    max_hold_days: int | None = Field(None, ge=1, le=120)  # trading days
 
 
 class PositionResponse(BaseModel):
@@ -57,8 +57,8 @@ class PositionResponse(BaseModel):
     profit_target_pct: float | None = None
     use_atr_exits: bool = True
     atr_value_at_entry: float | None = None
-    eod_exit_enabled: bool = True
-    max_hold_bars: int | None = None
+    eod_exit_enabled: bool = False
+    max_hold_days: int | None = None  # trading days
 
     # Live tracking
     current_price: float | None = None

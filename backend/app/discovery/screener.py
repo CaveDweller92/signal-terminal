@@ -65,20 +65,21 @@ SECTOR_ETF_MAP_CA: dict[str, str] = {
 
 
 class PremarketScreener:
-    # Weights for composite score (sum = 1.0)
+    # Weights for composite score (sum = 1.0) — swing trading
     WEIGHTS = {
-        "volume": 0.20,
-        "gap": 0.15,
+        "volume": 0.10,
+        "momentum": 0.20,  # replaces gap score (multi-day momentum)
         "technical": 0.30,
         "fundamental": 0.10,
         "news": 0.10,
-        "sector": 0.15,
+        "sector": 0.20,
     }
 
     # Massive has unlimited API calls. Finnhub free tier is 60 calls/min.
-    # 40 stocks/batch × 1 Finnhub call each, with 45s delay ≈ 53 calls/min — safe.
-    BATCH_SIZE = 40
-    BATCH_DELAY_SECS: float = 45.0
+    # 30 stocks/batch × 1 Finnhub call each, with 35s delay ≈ 51 calls/min — safe.
+    # (40/batch at 45s risks overlap: 40+40=80 in a 45s rolling window)
+    BATCH_SIZE = 30
+    BATCH_DELAY_SECS: float = 35.0
 
     def __init__(self, data_provider: DataProvider):
         self.data = data_provider
@@ -180,35 +181,37 @@ class PremarketScreener:
         return [saved_rows[e["symbol"]] for e in scored[:top_n] if e["symbol"] in saved_rows]
 
     async def _score_stock(self, stock: StockUniverse, sector_perf: dict[str, float]) -> dict:
-        """Score a single stock on all 6 dimensions (0-10 scale each)."""
-        bars = await self.data.get_intraday(stock.symbol)
+        """Score a single stock on 6 dimensions (0-10 scale each) using daily bars."""
         daily = await self.data.get_daily(stock.symbol)
 
-        if not bars or not daily:
-            raise ValueError(f"No data for {stock.symbol}")
+        if not daily or len(daily) < 20:
+            raise ValueError(f"Insufficient daily data for {stock.symbol}")
 
-        closes = np.array([b["close"] for b in bars])
-        volumes = np.array([b["volume"] for b in bars], dtype=float)
         daily_closes = np.array([b["close"] for b in daily])
+        daily_volumes = np.array([b["volume"] for b in daily], dtype=float)
 
-        # 1. Volume score — relative volume spike
-        vol_ratio = calc_volume_ratio(volumes)
+        # 1. Volume score — relative daily volume
+        vol_ratio = calc_volume_ratio(daily_volumes)
         current_vol = float(vol_ratio[-1]) if len(vol_ratio) > 0 and not np.isnan(vol_ratio[-1]) else 1.0
-        volume_score = min(10.0, current_vol * 3)  # 3x avg = score 9
+        volume_score = min(10.0, current_vol * 3)
 
-        # 2. Gap score — pre-market gap vs prior close
-        if len(daily_closes) >= 2:
-            gap_pct = ((closes[0] - daily_closes[-2]) / daily_closes[-2]) * 100
-        else:
-            gap_pct = 0.0
-        gap_score = min(10.0, abs(gap_pct) * 2)  # 5% gap = score 10
+        # 2. Momentum score — 5-day and 20-day price momentum (replaces gap score)
+        momentum_5d = 0.0
+        momentum_20d = 0.0
+        if len(daily_closes) >= 6:
+            momentum_5d = (daily_closes[-1] - daily_closes[-6]) / daily_closes[-6] * 100
+        if len(daily_closes) >= 21:
+            momentum_20d = (daily_closes[-1] - daily_closes[-21]) / daily_closes[-21] * 100
+        # Score: positive momentum = higher score, capped at 10
+        momentum_score = 5.0 + min(2.5, max(-2.5, momentum_5d * 0.5)) + min(2.5, max(-2.5, momentum_20d * 0.25))
+        momentum_score = max(0.0, min(10.0, momentum_score))
 
-        # 3. Technical score — RSI + EMA trend + MACD alignment
+        # 3. Technical score — RSI + EMA trend + MACD alignment (daily)
         rsi = calc_rsi(daily_closes)
         current_rsi = float(rsi[-1]) if len(rsi) > 0 and not np.isnan(rsi[-1]) else 50.0
 
-        ema_fast = calc_ema(daily_closes, 9)
-        ema_slow = calc_ema(daily_closes, 21)
+        ema_fast = calc_ema(daily_closes, 10)
+        ema_slow = calc_ema(daily_closes, 50)
         ema_bullish = (
             len(ema_fast) > 0
             and len(ema_slow) > 0
@@ -234,7 +237,7 @@ class PremarketScreener:
         # 4. Fundamental score — 20-day price momentum + return/risk (Sharpe proxy)
         fundamental_score = self._calc_fundamental_score(daily_closes)
 
-        # 5. News score — Finnhub article count (last 3 days)
+        # 5. News score — Finnhub article count (last 7 days)
         news_score, has_catalyst = await self._fetch_news_score(stock.symbol)
 
         # 6. Sector score — sector ETF performance relative to market benchmark
@@ -243,7 +246,7 @@ class PremarketScreener:
         # Composite
         composite = (
             volume_score * self.WEIGHTS["volume"]
-            + gap_score * self.WEIGHTS["gap"]
+            + momentum_score * self.WEIGHTS["momentum"]
             + tech_score * self.WEIGHTS["technical"]
             + fundamental_score * self.WEIGHTS["fundamental"]
             + news_score * self.WEIGHTS["news"]
@@ -252,13 +255,13 @@ class PremarketScreener:
 
         return {
             "volume": volume_score,
-            "gap": gap_score,
+            "gap": momentum_score,  # reuse DB column, now holds momentum
             "technical": tech_score,
             "fundamental": fundamental_score,
             "news": news_score,
             "sector": sector_score,
             "composite": composite,
-            "gap_pct": gap_pct,
+            "gap_pct": momentum_5d,  # reuse field for 5-day momentum %
             "rel_volume": current_vol,
             "has_catalyst": has_catalyst,
         }

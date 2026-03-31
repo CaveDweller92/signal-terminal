@@ -1,9 +1,9 @@
 """
 Live Scanner — background coroutine that runs inside the FastAPI process.
 
-Two loops:
-  - Every 30 seconds: check all open positions for exit signals, broadcast via WS
-  - Every 5 minutes during market hours: re-analyze the watchlist, broadcast via WS
+Swing trading mode:
+  - Every 30 minutes: check all open positions for exit signals, broadcast via WS
+  - Every 60 minutes during market hours: re-analyze the watchlist, broadcast via WS
 
 Runs as an asyncio.Task started in main.py startup_event.
 Uses the ws_manager singleton directly (no Celery/pub-sub needed).
@@ -25,19 +25,19 @@ from app.positions.monitor import PositionMonitor
 
 logger = logging.getLogger(__name__)
 
-# Market hours (Eastern — server must run with TZ=America/New_York or UTC is fine for simulation)
+# Market hours (Eastern)
 _MARKET_OPEN = time(9, 30)
 _MARKET_CLOSE = time(16, 15)
 
-# Intervals
-_POSITION_CHECK_INTERVAL = 30      # seconds
-_SIGNAL_SCAN_INTERVAL = 5 * 60    # seconds (5 minutes)
+# Intervals (swing trading — much less frequent than day trading)
+_POSITION_CHECK_INTERVAL = 30 * 60   # 30 minutes
+_SIGNAL_SCAN_INTERVAL = 60 * 60      # 60 minutes
 
 
 def _is_market_hours() -> bool:
-    """True during approximate market hours (Mon–Fri, 9:30–16:15 ET)."""
+    """True during approximate market hours (Mon-Fri, 9:30-16:15 ET)."""
     now = datetime.now()
-    if now.weekday() >= 5:  # Saturday / Sunday
+    if now.weekday() >= 5:
         return False
     t = now.time()
     return _MARKET_OPEN <= t <= _MARKET_CLOSE
@@ -50,7 +50,6 @@ async def _get_scan_symbols() -> list[str]:
       2. Top 12 most recent ScreenerResult records
     """
     async with async_session() as session:
-        # 1. Today's watchlist
         today = date.today()
         result = await session.execute(
             select(DailyWatchlist.symbol)
@@ -63,7 +62,6 @@ async def _get_scan_symbols() -> list[str]:
             logger.debug(f"LiveScanner: using today's watchlist ({len(symbols)} symbols)")
             return symbols
 
-        # 2. Most recent screener results
         result = await session.execute(
             select(ScreenerResult.symbol)
             .order_by(ScreenerResult.composite_score.desc())
@@ -126,11 +124,11 @@ async def run_live_scanner() -> None:
     """
     Main background loop. Runs forever until the task is cancelled.
 
-    Position checks run every 30 s.
-    Signal scans run every 5 min, but only during market hours.
+    Position checks run every 30 min.
+    Signal scans run every 60 min during market hours.
     """
-    logger.info("LiveScanner: started")
-    last_signal_scan = 0.0  # epoch seconds of last scan
+    logger.info("LiveScanner: started (swing trading mode)")
+    last_signal_scan = 0.0
 
     while True:
         try:
@@ -148,4 +146,4 @@ async def run_live_scanner() -> None:
             break
         except Exception as e:
             logger.error(f"LiveScanner: unexpected error: {e}")
-            await asyncio.sleep(5)  # brief back-off before retrying
+            await asyncio.sleep(5)

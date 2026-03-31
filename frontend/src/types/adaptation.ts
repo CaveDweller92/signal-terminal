@@ -20,7 +20,7 @@ export interface ParameterSnapshot {
   atr_target_multiplier: number;
   default_stop_loss_pct: number;
   default_profit_target_pct: number;
-  max_hold_bars: number;
+  max_hold_days: number;
 
   full_config: Record<string, unknown> | null;
   created_at: string;

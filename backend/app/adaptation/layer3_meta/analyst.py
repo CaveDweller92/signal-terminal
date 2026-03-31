@@ -28,7 +28,7 @@ from app.models.signal import Signal
 
 logger = logging.getLogger(__name__)
 
-REVIEW_PROMPT = """You are a quantitative trading strategy analyst reviewing today's performance for Signal Terminal, an intraday trading signals system.
+REVIEW_PROMPT = """You are a quantitative trading strategy analyst reviewing today's performance for Signal Terminal, a swing trading signals system that holds positions for days to weeks.
 
 ## Today's Summary
 Date: {date}
@@ -52,10 +52,9 @@ Current Regime: {regime}
 - Profit target exits: {target_count} (avg gain: {target_avg:+.2f}%)
 - Indicator reversal exits: {reversal_count}
 - Sentiment shift exits: {sentiment_count}
-- EOD exits: {eod_count}
 - Manual exits: {manual_count}
-- Average bars held (winners): {avg_bars_winners:.0f}
-- Average bars held (losers): {avg_bars_losers:.0f}
+- Average days held (winners): {avg_bars_winners:.0f}
+- Average days held (losers): {avg_bars_losers:.0f}
 
 ## Current Parameters
 - ATR stop multiplier: {atr_stop_mult}
@@ -65,10 +64,11 @@ Current Regime: {regime}
 
 ## Your Task
 Analyze today's performance and provide:
-1. A 2-3 sentence summary of how the strategy performed
+1. A 2-3 sentence summary of how the swing trading strategy performed
 2. Specific parameter recommendations (if any)
-3. Exit strategy assessment — are stops too tight? Targets too wide?
+3. Exit strategy assessment — are stops too tight for multi-day holds? Are targets giving enough room for swing moves?
 4. Any concerns about the current regime detection
+5. Are we holding through overnight/weekend gaps appropriately?
 
 Respond in JSON:
 {{

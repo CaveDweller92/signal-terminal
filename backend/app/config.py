@@ -28,13 +28,16 @@ class Settings(BaseSettings):
     screener_universes: str = "sp500,nasdaq100,tsx"
     watchlist_size: int = 12
 
-    # Exit Strategy Defaults
-    default_stop_loss_pct: float = 2.0
-    default_profit_target_pct: float = 3.0
-    default_atr_multiplier_stop: float = 1.5
-    default_atr_multiplier_target: float = 2.5
-    eod_exit_warning_minutes: int = 15
-    max_hold_bars: int = 60
+    # Trading Mode
+    trading_mode: str = "swing"  # "swing" or "day"
+
+    # Exit Strategy Defaults (tuned for swing trading — daily ATR)
+    default_stop_loss_pct: float = 5.0
+    default_profit_target_pct: float = 10.0
+    default_atr_multiplier_stop: float = 2.5
+    default_atr_multiplier_target: float = 4.0
+    eod_exit_enabled: bool = False
+    max_hold_days: int = 25  # trading days (~5 weeks)
 
     # Server
     cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"])

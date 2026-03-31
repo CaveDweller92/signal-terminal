@@ -19,22 +19,29 @@ from app.models.screener_result import ScreenerResult
 from app.models.watchlist import DailyWatchlist
 
 
-WATCHLIST_PROMPT = """You are a quantitative trading analyst. Given the pre-market screener results below, select exactly {size} stocks for today's watchlist.
+WATCHLIST_PROMPT = """You are a quantitative swing trading analyst. Given the screener results below, select exactly {size} stocks for the active watchlist.
+
+These picks are for SWING TRADING — positions held for days to weeks, not intraday.
 
 CURRENT MARKET REGIME: {regime}
+
+CURRENTLY HELD POSITIONS (keep these if still strong):
+{active_positions}
 
 SCREENER RESULTS (top {count} by composite score):
 {screener_data}
 
 For each pick, provide:
 1. The stock symbol
-2. A 1-2 sentence reasoning explaining WHY this stock is interesting today
+2. A 1-2 sentence reasoning explaining WHY this stock is a good swing trade setup
 
 Consider:
 - Sector diversification (don't pick 5 tech stocks)
-- Mix of momentum plays and mean-reversion opportunities based on the regime
-- Volume confirmation (higher relative volume = more conviction)
-- Risk/reward balance across the watchlist
+- Multi-day momentum and trend strength based on the regime
+- Volume confirmation on daily bars (higher = more conviction)
+- Risk/reward balance for multi-day holds
+- Keep any currently held positions that still have strong setups
+- Favor stocks with clear technical patterns (breakouts, pullbacks to support, oversold bounces)
 
 Respond in JSON format:
 {{
@@ -72,6 +79,13 @@ async def build_watchlist(
     if not screener_results:
         return []
 
+    # Get currently held position symbols so Claude can keep them on the watchlist
+    from app.models.position import Position
+    active_result = await db.execute(
+        select(Position.symbol).where(Position.status == "OPEN")
+    )
+    active_symbols = [row[0] for row in active_result.fetchall()]
+
     # Clear today's existing watchlist
     await db.execute(
         delete(DailyWatchlist).where(DailyWatchlist.watch_date == today)
@@ -79,14 +93,22 @@ async def build_watchlist(
 
     # Try Claude API, fall back to top N
     if settings.has_anthropic_key:
-        picks = await _claude_pick(screener_results, regime, size)
+        picks = await _claude_pick(screener_results, regime, size, active_symbols)
     else:
         picks = _fallback_pick(screener_results, size)
 
+    # Deduplicate picks (Claude sometimes returns the same symbol twice)
+    seen: set[str] = set()
+    unique_picks: list[dict] = []
+    for pick in picks:
+        sym = pick.get("symbol", "")
+        if sym and sym not in seen:
+            seen.add(sym)
+            unique_picks.append(pick)
+
     # Save to DB
     watchlist: list[DailyWatchlist] = []
-    for i, pick in enumerate(picks):
-        # Find the screener result for this symbol
+    for i, pick in enumerate(unique_picks):
         sr = next((r for r in screener_results if r.symbol == pick["symbol"]), None)
 
         entry = DailyWatchlist(
@@ -110,6 +132,7 @@ async def _claude_pick(
     results: list[ScreenerResult],
     regime: str,
     size: int,
+    active_symbols: list[str] | None = None,
 ) -> list[dict]:
     """Use Claude API to pick stocks from screener results."""
     from anthropic import AsyncAnthropic
@@ -117,18 +140,21 @@ async def _claude_pick(
     # Format screener data for the prompt
     screener_data = "\n".join(
         f"  {r.symbol} ({r.exchange}) | Composite: {r.composite_score:.2f} | "
-        f"Vol: {r.volume_score:.1f} | Gap: {r.gap_score:.1f} | "
+        f"Vol: {r.volume_score:.1f} | Momentum: {r.gap_score:.1f} | "
         f"Tech: {r.technical_score:.1f} | Fund: {r.fundamental_score:.1f} | "
         f"News: {r.news_score:.1f} | Sector: {r.sector_score:.1f} | "
         f"RelVol: {r.relative_volume:.1f}x | Sector: {r.sector}"
         for r in results
     )
 
+    active_pos_text = "None" if not active_symbols else ", ".join(active_symbols)
+
     prompt = WATCHLIST_PROMPT.format(
         size=size,
         regime=regime,
         count=len(results),
         screener_data=screener_data,
+        active_positions=active_pos_text,
     )
 
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)

@@ -7,11 +7,12 @@
 
 ## What This Is
 
-A self-adapting intraday stock trading signals platform. The user executes trades manually on Wealthsimple; Signal Terminal provides the intelligence layer:
-- Morning watchlist (Claude-curated, 12 picks from ~830 stocks)
-- Intraday BUY/SELL signals with conviction scores
-- Real-time EXIT alerts on open positions (stop loss, profit target, indicator reversal, sentiment shift, EOD)
+A self-adapting swing trading signals platform. The user executes trades manually on Wealthsimple; Signal Terminal provides the intelligence layer:
+- Daily watchlist (Claude-curated, 12 picks from ~4,600 stocks)
+- Daily BUY/SELL signals with conviction scores (based on daily bars)
+- EXIT alerts on open positions (stop loss, profit target, indicator reversal, sentiment shift)
 - Self-tuning via 3-layer adaptive system (Bayesian optimizer + regime detection + Claude meta-review)
+- Positions held for days to weeks (swing trading)
 
 **Disclaimer:** Educational/informational only. Not financial advice.
 
@@ -174,12 +175,12 @@ FINNHUB_API_KEY=           # Required for news sentiment
 TIMEZONE=America/New_York
 SCREENER_UNIVERSES=sp500,nasdaq100,tsx
 WATCHLIST_SIZE=12
-DEFAULT_STOP_LOSS_PCT=2.0
-DEFAULT_PROFIT_TARGET_PCT=3.0
-DEFAULT_ATR_MULTIPLIER_STOP=1.5
-DEFAULT_ATR_MULTIPLIER_TARGET=2.5
-EOD_EXIT_WARNING_MINUTES=15
-MAX_HOLD_BARS=60
+DEFAULT_STOP_LOSS_PCT=5.0
+DEFAULT_PROFIT_TARGET_PCT=10.0
+DEFAULT_ATR_MULTIPLIER_STOP=2.5
+DEFAULT_ATR_MULTIPLIER_TARGET=4.0
+EOD_EXIT_ENABLED=false
+MAX_HOLD_DAYS=25
 ```
 
 ---
@@ -187,15 +188,15 @@ MAX_HOLD_BARS=60
 ## Daily Pipeline (runtime reference)
 
 ```
-5:00 AM   Pre-market screener (~830 stocks)
-6:00 AM   Claude builds watchlist (12 picks) + email
-9:30 AM   Signal engine + position monitor active
-Ongoing   Entry signals on watchlist; exit alerts on open positions
-Every 30m Regime detection
-3:45 PM   EOD exit warnings
-3:55 PM   CRITICAL EOD alerts
-4:15 PM   Claude daily meta-review + email
-4:30 PM   Performance calculation
+5:00 AM   Morning screener (~4,600 stocks, using previous close data)
+10:00 AM  Morning position check
+1:00 PM   Midday position check
+4:15 PM   Afternoon position check
+5:00 PM   Post-close screener (finalized daily bars)
+5:00 PM   Regime detection (daily)
+5:30 PM   Claude builds watchlist (12 picks) + email
+5:45 PM   Claude daily meta-review + email
+6:00 PM   Performance calculation
 ```
 
 ---

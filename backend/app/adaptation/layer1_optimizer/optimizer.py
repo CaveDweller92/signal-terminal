@@ -138,7 +138,7 @@ class OnlineOptimizer:
             # Held too long
             if pnl < 0:
                 # Lost money AND held too long → reduce max hold
-                adjusted["max_hold_bars"] = params.get("max_hold_bars", 60) - lr * 5
+                adjusted["max_hold_days"] = params.get("max_hold_days", 60) - lr * 5
 
         # General entry quality adjustment
         if pnl > 0:

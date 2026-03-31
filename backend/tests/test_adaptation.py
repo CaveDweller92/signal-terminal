@@ -101,7 +101,7 @@ class TestRegimePresets:
         for regime, preset in REGIME_PRESETS.items():
             assert "atr_target_multiplier" in preset, f"{regime}: missing atr_target_multiplier"
             assert "atr_stop_multiplier" in preset, f"{regime}: missing atr_stop_multiplier"
-            assert "max_hold_bars" in preset, f"{regime}: missing max_hold_bars"
+            assert "max_hold_days" in preset, f"{regime}: missing max_hold_days"
 
     def test_preset_values_within_bounds(self):
         """Preset values should be within parameter space bounds."""
@@ -118,7 +118,7 @@ class TestRegimePresets:
         choppy = REGIME_PRESETS["volatile_choppy"]
         trend_up = REGIME_PRESETS["trending_up"]
         assert choppy["atr_stop_multiplier"] < trend_up["atr_stop_multiplier"]
-        assert choppy["max_hold_bars"] < trend_up["max_hold_bars"]
+        assert choppy["max_hold_days"] < trend_up["max_hold_days"]
 
     def test_trending_up_has_widest_targets(self):
         """In uptrends, targets should be widest (let winners run)."""
