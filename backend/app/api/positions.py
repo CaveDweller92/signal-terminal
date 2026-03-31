@@ -67,6 +67,12 @@ async def close_position(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    # Trigger adaptive system — optimizer updates parameters based on trade outcome
+    from app.adaptation import on_trade_closed
+    await on_trade_closed(db, position)
+    await db.commit()
+
     return PositionResponse.model_validate(position)
 
 
