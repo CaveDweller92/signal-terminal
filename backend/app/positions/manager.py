@@ -129,6 +129,48 @@ class PositionManager:
         await self.db.flush()
         return position
 
+    async def edit_position(self, position_id: int, updates: dict) -> Position:
+        """Edit core position fields. Auto-recalculates stop/target if entry price or direction changes."""
+        position = await self.db.get(Position, position_id)
+        if not position or position.status != "OPEN":
+            raise ValueError("Position not found or already closed")
+
+        for field in ["entry_price", "quantity", "direction",
+                       "stop_loss_price", "profit_target_price"]:
+            if field in updates and updates[field] is not None:
+                setattr(position, field, updates[field])
+
+        # Auto-recalculate stop/target when entry price or direction changes
+        # (unless the user explicitly provided new stop/target values)
+        recalc = "entry_price" in updates or "direction" in updates
+        user_set_sl = "stop_loss_price" in updates
+        user_set_pt = "profit_target_price" in updates
+
+        if recalc and (not user_set_sl or not user_set_pt):
+            atr = position.atr_value_at_entry
+            if not atr:
+                daily = await self.data.get_daily(position.symbol)
+                atr = self._calc_atr(daily) if daily else position.entry_price * 0.02
+
+            entry = position.entry_price
+            stop_mult = position.atr_stop_multiplier or settings.default_atr_multiplier_stop
+            target_mult = position.atr_target_multiplier or settings.default_atr_multiplier_target
+
+            if position.direction == "LONG":
+                new_sl = round(entry - atr * stop_mult, 2)
+                new_pt = round(entry + atr * target_mult, 2)
+            else:
+                new_sl = round(entry + atr * stop_mult, 2)
+                new_pt = round(entry - atr * target_mult, 2)
+
+            if not user_set_sl:
+                position.stop_loss_price = new_sl
+            if not user_set_pt:
+                position.profit_target_price = new_pt
+
+        await self.db.flush()
+        return position
+
     async def update_exit_levels(self, position_id: int, updates: dict) -> Position:
         """Update stop loss / profit target on an open position."""
         position = await self.db.get(Position, position_id)

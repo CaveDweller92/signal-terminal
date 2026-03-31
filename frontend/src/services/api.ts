@@ -86,6 +86,10 @@ export function fetchRecentAlerts(limit = 100): Promise<ExitSignal[]> {
   return fetchJSON<ExitSignal[]>(`/positions/alerts/recent?limit=${limit}`);
 }
 
+export function editPosition(id: number, updates: Partial<Pick<Position, 'entry_price' | 'quantity' | 'direction' | 'stop_loss_price' | 'profit_target_price'>>): Promise<Position> {
+  return putJSON<Position>(`/positions/${id}/edit`, updates);
+}
+
 export function fetchTradeHistory(days = 30): Promise<Position[]> {
   return fetchJSON<Position[]>(`/positions/history?days=${days}`);
 }

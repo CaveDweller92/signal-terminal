@@ -10,9 +10,10 @@ interface PositionsPanelProps {
   loading: boolean;
   onOpen: (trade: TradeInput) => Promise<void>;
   onClose: (id: number, input: CloseInput) => Promise<void>;
+  onEdit: (updated: Position) => void;
 }
 
-export function PositionsPanel({ positions, loading, onOpen, onClose }: PositionsPanelProps) {
+export function PositionsPanel({ positions, loading, onOpen, onClose, onEdit }: PositionsPanelProps) {
   const [tab, setTab] = useState<TabId>('open');
 
   return (
@@ -38,6 +39,7 @@ export function PositionsPanel({ positions, loading, onOpen, onClose }: Position
             loading={loading}
             onOpen={onOpen}
             onClose={onClose}
+            onEdit={onEdit}
           />
         )}
         {tab === 'history' && <TradeHistory />}

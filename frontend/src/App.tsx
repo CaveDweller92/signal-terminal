@@ -134,6 +134,7 @@ function App() {
               loading={posLoading}
               onOpen={addPosition}
               onClose={closePos}
+              onEdit={updatePosition}
             />
           </div>
         )}

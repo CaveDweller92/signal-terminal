@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Position, CloseInput, TradeInput } from '../../types/positions';
 import { PositionRow } from './PositionRow';
 import { ClosePositionModal } from './ClosePositionModal';
+import { EditPositionModal } from './EditPositionModal';
 import { TradeEntryForm } from './TradeEntryForm';
 
 interface PositionListProps {
@@ -9,10 +10,12 @@ interface PositionListProps {
   loading: boolean;
   onOpen: (trade: TradeInput) => Promise<void>;
   onClose: (id: number, input: CloseInput) => Promise<void>;
+  onEdit: (updated: Position) => void;
 }
 
-export function PositionList({ positions, loading, onOpen, onClose }: PositionListProps) {
+export function PositionList({ positions, loading, onOpen, onClose, onEdit }: PositionListProps) {
   const [closingPosition, setClosingPosition] = useState<Position | null>(null);
+  const [editingPosition, setEditingPosition] = useState<Position | null>(null);
 
   return (
     <div className="flex flex-col h-full">
@@ -35,6 +38,7 @@ export function PositionList({ positions, loading, onOpen, onClose }: PositionLi
           <PositionRow
             key={position.id}
             position={position}
+            onEdit={setEditingPosition}
             onClose={setClosingPosition}
           />
         ))}
@@ -48,6 +52,17 @@ export function PositionList({ positions, loading, onOpen, onClose }: PositionLi
             setClosingPosition(null);
           }}
           onCancel={() => setClosingPosition(null)}
+        />
+      )}
+
+      {editingPosition && (
+        <EditPositionModal
+          position={editingPosition}
+          onSave={(updated) => {
+            onEdit(updated);
+            setEditingPosition(null);
+          }}
+          onCancel={() => setEditingPosition(null)}
         />
       )}
     </div>

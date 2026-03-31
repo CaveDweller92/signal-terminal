@@ -39,6 +39,15 @@ class ExitUpdateInput(BaseModel):
     max_hold_days: int | None = Field(None, ge=1, le=120)  # trading days
 
 
+class PositionEditInput(BaseModel):
+    """Edit core position fields (for correcting data entry errors)."""
+    entry_price: float | None = Field(None, gt=0)
+    quantity: int | None = Field(None, gt=0)
+    direction: str | None = Field(None, pattern="^(LONG|SHORT)$")
+    stop_loss_price: float | None = None
+    profit_target_price: float | None = None
+
+
 class PositionResponse(BaseModel):
     id: int
     symbol: str

@@ -24,6 +24,7 @@ from app.schemas.positions import (
     CloseInput,
     ExitSignalResponse,
     ExitUpdateInput,
+    PositionEditInput,
     PositionResponse,
     TradeInput,
     TradeStatsResponse,
@@ -73,6 +74,21 @@ async def close_position(
     await on_trade_closed(db, position)
     await db.commit()
 
+    return PositionResponse.model_validate(position)
+
+
+@router.put("/{position_id}/edit", response_model=PositionResponse)
+async def edit_position(
+    position_id: int, edits: PositionEditInput, db: AsyncSession = Depends(get_db)
+):
+    """Edit core position fields (entry price, quantity, direction, stops)."""
+    manager = _get_manager(db)
+    try:
+        position = await manager.edit_position(
+            position_id, edits.model_dump(exclude_none=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return PositionResponse.model_validate(position)
 
 

@@ -3,10 +3,11 @@ import { PnlBadge } from '../common/PnlBadge';
 
 interface PositionRowProps {
   position: Position;
+  onEdit: (position: Position) => void;
   onClose: (position: Position) => void;
 }
 
-export function PositionRow({ position, onClose }: PositionRowProps) {
+export function PositionRow({ position, onEdit, onClose }: PositionRowProps) {
   const directionColor =
     position.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400';
 
@@ -56,17 +57,25 @@ export function PositionRow({ position, onClose }: PositionRowProps) {
             </span>
           )}
         </div>
-        <button
-          onClick={() => onClose(position)}
-          className="text-[10px] text-zinc-400 hover:text-red-400 border border-zinc-700 hover:border-red-500/50 px-2 py-0.5 rounded transition-colors"
-        >
-          Close
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => onEdit(position)}
+            className="text-[10px] text-zinc-400 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 px-2 py-0.5 rounded transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => onClose(position)}
+            className="text-[10px] text-zinc-400 hover:text-red-400 border border-zinc-700 hover:border-red-500/50 px-2 py-0.5 rounded transition-colors"
+          >
+            Close
+          </button>
+        </div>
       </div>
 
       {position.bars_held > 0 && (
         <div className="mt-1 text-[10px] text-zinc-600 font-mono">
-          {position.bars_held} bars held
+          {position.bars_held} days held
           {position.regime_at_entry && (
             <span className="ml-2">· {position.regime_at_entry}</span>
           )}

@@ -84,7 +84,12 @@ class PositionMonitor:
             pnl_pct = (position.entry_price - price) / position.entry_price * 100
 
         position.current_price = price
-        position.unrealized_pnl = round(pnl_pct, 4)
+        # Dollar P&L = price difference × quantity
+        if is_long:
+            pnl_dollar = (price - position.entry_price) * position.quantity
+        else:
+            pnl_dollar = (position.entry_price - price) * position.quantity
+        position.unrealized_pnl = round(pnl_dollar, 2)
         position.unrealized_pnl_pct = round(pnl_pct, 4)
         position.high_since_entry = max(position.high_since_entry or price, price)
         position.low_since_entry = min(position.low_since_entry or price, price)
