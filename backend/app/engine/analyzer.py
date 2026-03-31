@@ -60,20 +60,35 @@ class AnalyzerConfig:
         self.default_profit_target_pct: float = settings.default_profit_target_pct
 
 
+# Module-level singletons — preserves in-memory caches across requests
+_sentiment_singleton: SentimentAnalyzer | None = None
+_fundamental_singleton: FundamentalAnalyzer | None = None
+
+
+def _get_sentiment() -> SentimentAnalyzer | None:
+    global _sentiment_singleton
+    if settings.finnhub_api_key and settings.anthropic_api_key:
+        if _sentiment_singleton is None:
+            _sentiment_singleton = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
+        return _sentiment_singleton
+    return None
+
+
+def _get_fundamentals() -> FundamentalAnalyzer | None:
+    global _fundamental_singleton
+    if settings.finnhub_api_key:
+        if _fundamental_singleton is None:
+            _fundamental_singleton = FundamentalAnalyzer(settings.finnhub_api_key)
+        return _fundamental_singleton
+    return None
+
+
 class SignalAnalyzer:
     def __init__(self, data_provider: DataProvider, config: AnalyzerConfig | None = None):
         self.data = data_provider
         self.config = config or AnalyzerConfig()
-        # Real sentiment when both keys are configured; simulated otherwise
-        if settings.finnhub_api_key and settings.anthropic_api_key:
-            self._sentiment = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
-        else:
-            self._sentiment = None
-        # Real fundamentals when Finnhub key is configured; simulated otherwise
-        if settings.finnhub_api_key:
-            self._fundamentals = FundamentalAnalyzer(settings.finnhub_api_key)
-        else:
-            self._fundamentals = None
+        self._sentiment = _get_sentiment()
+        self._fundamentals = _get_fundamentals()
 
     async def analyze(self, symbol: str) -> dict:
         """
