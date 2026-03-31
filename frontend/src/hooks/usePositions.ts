@@ -8,6 +8,17 @@ import {
 
 const POLL_INTERVAL_MS = 60_000; // 60 seconds — matches position monitor
 
+function isMarketOpen(): boolean {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  if (day === 0 || day === 6) return false;
+  const hours = et.getHours();
+  const minutes = et.getMinutes();
+  const time = hours * 60 + minutes;
+  return time >= 9 * 60 + 30 && time <= 16 * 60;
+}
+
 interface UsePositionsReturn {
   positions: Position[];
   loading: boolean;
@@ -36,10 +47,11 @@ export function usePositions(): UsePositionsReturn {
     }
   }, []);
 
-  // Poll for updated positions every 60s (matches Celery monitor interval)
+  // Poll for updated positions every 60s — skip when market is closed
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     pollRef.current = setInterval(async () => {
+      if (!isMarketOpen()) return;
       try {
         const data = await fetchOpenPositions();
         setPositions(data);

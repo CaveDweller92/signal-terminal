@@ -4,6 +4,18 @@ import { fetchSignals } from '../services/api';
 
 const POLL_INTERVAL_MS = 60 * 1000; // 1 minute — matches backend cache TTL
 
+function isMarketOpen(): boolean {
+  const now = new Date();
+  // Convert to ET (America/New_York)
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  if (day === 0 || day === 6) return false; // weekend
+  const hours = et.getHours();
+  const minutes = et.getMinutes();
+  const time = hours * 60 + minutes;
+  return time >= 9 * 60 + 30 && time <= 16 * 60; // 9:30 AM - 4:00 PM ET
+}
+
 interface UseSignalsResult {
   signals: Signal[];
   loading: boolean;
@@ -42,8 +54,9 @@ export function useSignals(): UseSignalsResult {
     }
   }, [resetCountdown]);
 
-  // Silent refresh for polling — no loading spinner flicker
+  // Silent refresh for polling — skip when market is closed
   const poll = useCallback(async () => {
+    if (!isMarketOpen()) return;
     try {
       const data = await fetchSignals();
       setSignals(data.signals);
