@@ -17,8 +17,8 @@ from sqlalchemy import select
 
 from app.api.websocket import ws_manager
 from app.db.database import async_session
-from app.engine.analyzer import SignalAnalyzer
 from app.engine.data_provider import get_data_provider
+from app.engine.signal_service import SignalService
 from app.models.watchlist import DailyWatchlist
 from app.models.screener_result import ScreenerResult
 from app.positions.monitor import PositionMonitor
@@ -77,18 +77,16 @@ async def _get_scan_symbols() -> list[str]:
 
 
 async def _scan_signals() -> None:
-    """Resolve watchlist symbols, analyze each, broadcast signal_update."""
+    """Resolve watchlist symbols, analyze each, persist to DB, broadcast signal_update."""
     try:
         symbols = await _get_scan_symbols()
         if not symbols:
             return
         provider = get_data_provider()
-        analyzer = SignalAnalyzer(provider)
-        results = []
-        for symbol in symbols:
-            signal = await analyzer.analyze(symbol)
-            if signal is not None:
-                results.append(signal)
+        async with async_session() as session:
+            service = SignalService(session, provider)
+            results = await service.analyze_batch(symbols)
+            await session.commit()
         results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
 
         await ws_manager.broadcast({

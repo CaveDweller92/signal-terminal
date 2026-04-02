@@ -170,6 +170,7 @@ class TestOnlineOptimizer:
         position.realized_pnl_pct = -2.5
         position.exit_reason = "stop_loss"
         position.bars_held = 15
+        position.entry_signal_id = None
 
         result = await optimizer.update_after_trade(db, position)
         # Should create a new snapshot with adjusted params

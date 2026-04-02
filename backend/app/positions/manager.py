@@ -12,13 +12,14 @@ Flow:
 from datetime import datetime
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.engine.data_provider import DataProvider
 from app.engine.regime import RegimeDetector
 from app.models.position import Position
+from app.models.signal import Signal
 
 
 class PositionManager:
@@ -58,6 +59,22 @@ class PositionManager:
             default_stop = entry_price + atr * stop_mult
             default_target = entry_price - atr * target_mult
 
+        # Auto-link to today's signal for this symbol (if not manually provided)
+        entry_signal_id = trade_input.get("entry_signal_id")
+        if not entry_signal_id:
+            from datetime import date
+            today = date.today()
+            expected_type = "BUY" if direction == "LONG" else "SELL"
+            sig_result = await self.db.execute(
+                select(Signal.id)
+                .where(Signal.symbol == symbol)
+                .where(Signal.signal_type == expected_type)
+                .where(func.date(Signal.created_at) == today)
+                .order_by(Signal.created_at.desc())
+                .limit(1)
+            )
+            entry_signal_id = sig_result.scalar_one_or_none()
+
         position = Position(
             symbol=symbol,
             exchange=trade_input.get("exchange"),
@@ -66,7 +83,7 @@ class PositionManager:
             entry_price=entry_price,
             quantity=trade_input["quantity"],
             entry_time=trade_input.get("entry_time", datetime.utcnow()),
-            entry_signal_id=trade_input.get("entry_signal_id"),
+            entry_signal_id=entry_signal_id,
 
             # Exit config — user overrides or ATR-based defaults
             stop_loss_price=trade_input.get("stop_loss_price", round(default_stop, 2)),
@@ -126,6 +143,22 @@ class PositionManager:
         position.realized_pnl_dollar = round(pnl_dollar, 2)
         position.regime_at_exit = regime_result["regime"]
 
+        # Update linked signal outcome
+        if position.entry_signal_id:
+            signal = await self.db.get(Signal, position.entry_signal_id)
+            if signal:
+                if pnl_pct > 0.5:
+                    signal.outcome = "win"
+                elif pnl_pct < -0.5:
+                    signal.outcome = "loss"
+                else:
+                    signal.outcome = "scratch"
+                signal.exit_price = exit_price
+                signal.return_pct = round(pnl_pct, 4)
+                days_held = (datetime.utcnow() - position.entry_time).days if position.entry_time else 0
+                signal.bars_held = max(days_held, 1)
+                signal.outcome_at = datetime.utcnow()
+
         await self.db.flush()
         return position
 
@@ -145,6 +178,17 @@ class PositionManager:
         recalc = "entry_price" in updates or "direction" in updates
         user_set_sl = "stop_loss_price" in updates
         user_set_pt = "profit_target_price" in updates
+
+        # Recalculate P&L with updated entry price / direction / quantity
+        price = position.current_price or position.entry_price
+        if position.direction == "LONG":
+            pnl_pct = (price - position.entry_price) / position.entry_price * 100
+            pnl_dollar = (price - position.entry_price) * position.quantity
+        else:
+            pnl_pct = (position.entry_price - price) / position.entry_price * 100
+            pnl_dollar = (position.entry_price - price) * position.quantity
+        position.unrealized_pnl_pct = round(pnl_pct, 4)
+        position.unrealized_pnl = round(pnl_dollar, 2)
 
         if recalc and (not user_set_sl or not user_set_pt):
             atr = position.atr_value_at_entry

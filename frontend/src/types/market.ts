@@ -14,6 +14,11 @@ export interface Indicators {
   ema_just_crossed: boolean;
   volume_ratio: number;
   atr: number;
+  bollinger_pct_b?: number;
+  stochastic_k?: number;
+  stochastic_d?: number;
+  adx?: number;
+  divergence?: { type: string; confidence: number };
 }
 
 export interface SignalReasons {
@@ -23,6 +28,7 @@ export interface SignalReasons {
 }
 
 export interface Signal {
+  id?: number;
   symbol: string;
   signal_type: 'BUY' | 'SELL' | 'HOLD';
   conviction: number;
@@ -33,6 +39,7 @@ export interface Signal {
   suggested_stop_loss: number;
   suggested_profit_target: number;
   atr_at_signal: number;
+  regime_at_signal?: string;
   reasons: SignalReasons;
   indicators: Indicators;
 }

@@ -23,11 +23,15 @@ from app.engine.data_provider import DataProvider
 from app.engine.fundamental_analyzer import FundamentalAnalyzer
 from app.engine.sentiment_analyzer import SentimentAnalyzer
 from app.engine.indicators import (
+    calc_adx,
     calc_atr,
+    calc_bollinger_bands,
     calc_ema,
     calc_macd,
     calc_rsi,
+    calc_stochastic,
     calc_volume_ratio,
+    detect_divergence,
     detect_ema_crossover,
 )
 
@@ -35,7 +39,7 @@ from app.engine.indicators import (
 class AnalyzerConfig:
     """Strategy parameters — these get tuned by the adaptive system."""
 
-    def __init__(self):
+    def __init__(self, overrides: dict | None = None):
         self.rsi_period: int = 14
         self.rsi_overbought: int = 70
         self.rsi_oversold: int = 30
@@ -57,6 +61,12 @@ class AnalyzerConfig:
         self.atr_target_multiplier: float = settings.default_atr_multiplier_target
         self.default_stop_loss_pct: float = settings.default_stop_loss_pct
         self.default_profit_target_pct: float = settings.default_profit_target_pct
+
+        # Apply overrides from ParameterSnapshot (regime-tuned values)
+        if overrides:
+            for key, value in overrides.items():
+                if hasattr(self, key) and value is not None:
+                    setattr(self, key, value)
 
 
 # Module-level singletons — preserves in-memory caches across requests
@@ -116,15 +126,26 @@ class SignalAnalyzer:
         vol_ratio = calc_volume_ratio(volumes)
         crossover = detect_ema_crossover(closes, self.config.ema_fast, self.config.ema_slow)
 
+        # New indicators
+        bb_upper, bb_middle, bb_lower, bb_pct_b = calc_bollinger_bands(closes)
+        stoch_k, stoch_d = calc_stochastic(highs, lows, closes)
+        adx = calc_adx(highs, lows, closes)
+        rsi_divergence = detect_divergence(closes, rsi)
+
         current_price = closes[-1]
         current_rsi = rsi[-1] if not np.isnan(rsi[-1]) else 50.0
         current_histogram = histogram[-1] if not np.isnan(histogram[-1]) else 0.0
         current_atr = atr[-1] if not np.isnan(atr[-1]) else current_price * 0.02
         current_vol_ratio = vol_ratio[-1] if not np.isnan(vol_ratio[-1]) else 1.0
+        current_bb_pct_b = bb_pct_b[-1] if not np.isnan(bb_pct_b[-1]) else 0.5
+        current_stoch_k = stoch_k[-1] if not np.isnan(stoch_k[-1]) else 50.0
+        current_stoch_d = stoch_d[-1] if not np.isnan(stoch_d[-1]) else 50.0
+        current_adx = adx[-1] if not np.isnan(adx[-1]) else 25.0
 
         # --- Score technical signals (range: -5 to +5) ---
         tech_score, tech_reasons = self._score_technical(
-            current_rsi, current_histogram, crossover, current_vol_ratio
+            current_rsi, current_histogram, crossover, current_vol_ratio, current_price,
+            current_bb_pct_b, current_stoch_k, current_adx, rsi_divergence,
         )
 
         # --- Sentiment & fundamental ---
@@ -193,6 +214,11 @@ class SignalAnalyzer:
                 "ema_just_crossed": crossover["just_crossed"],
                 "volume_ratio": round(float(current_vol_ratio), 2),
                 "atr": round(float(current_atr), 4),
+                "bollinger_pct_b": round(float(current_bb_pct_b), 3),
+                "stochastic_k": round(float(current_stoch_k), 2),
+                "stochastic_d": round(float(current_stoch_d), 2),
+                "adx": round(float(current_adx), 2),
+                "divergence": rsi_divergence,
             },
         }
 
@@ -202,6 +228,11 @@ class SignalAnalyzer:
         macd_hist: float,
         crossover: dict,
         vol_ratio: float,
+        current_price: float = 1.0,
+        bb_pct_b: float = 0.5,
+        stoch_k: float = 50.0,
+        adx: float = 25.0,
+        divergence: dict | None = None,
     ) -> tuple[float, list[str]]:
         """
         Score technical indicators on a -5 to +5 scale.
@@ -225,41 +256,82 @@ class SignalAnalyzer:
             score -= 1.0
             reasons.append(f"RSI approaching overbought ({rsi:.1f})")
 
-        # MACD histogram — daily values are much larger than intraday,
-        # so we normalize by current price to get a comparable scale
-        norm_hist = macd_hist / max(abs(macd_hist), 1.0) if macd_hist != 0 else 0
-        if macd_hist > 0:
-            score += min(abs(norm_hist) * 2.0, 2.0)
-            reasons.append(f"MACD bullish (histogram {macd_hist:.2f})")
-        elif macd_hist < 0:
-            score -= min(abs(norm_hist) * 2.0, 2.0)
-            reasons.append(f"MACD bearish (histogram {macd_hist:.2f})")
+        # MACD histogram — normalize by price for comparable scale across stocks
+        macd_pct = (macd_hist / current_price) * 100 if current_price > 0 else 0
+        if macd_pct > 0:
+            macd_score = min(macd_pct * 2.0, 2.0)
+            score += macd_score
+            reasons.append(f"MACD bullish ({macd_pct:.2f}% of price)")
+        elif macd_pct < 0:
+            macd_score = min(abs(macd_pct) * 2.0, 2.0)
+            score -= macd_score
+            reasons.append(f"MACD bearish ({macd_pct:.2f}% of price)")
 
-        # EMA crossover (10/50 for swing)
+        # EMA crossover (10/50 for swing) — reduced fresh cross bonus from 2.0 to 1.5
         if crossover["crossover"] == "bullish":
             if crossover["just_crossed"]:
-                score += 2.0
+                score += 1.5
                 reasons.append("Bullish EMA crossover (fresh)")
             else:
                 score += 0.5
                 reasons.append("Bullish EMA trend")
         elif crossover["crossover"] == "bearish":
             if crossover["just_crossed"]:
-                score -= 2.0
+                score -= 1.5
                 reasons.append("Bearish EMA crossover (fresh)")
             else:
                 score -= 0.5
                 reasons.append("Bearish EMA trend")
 
-        # Volume confirmation (daily volume)
+        # Bollinger Bands %B (±1.0 max)
+        if bb_pct_b < 0.0:
+            score += 1.0
+            reasons.append(f"Below lower Bollinger Band (%B={bb_pct_b:.2f})")
+        elif bb_pct_b < 0.2:
+            score += 0.5
+            reasons.append(f"Near lower Bollinger Band (%B={bb_pct_b:.2f})")
+        elif bb_pct_b > 1.0:
+            score -= 1.0
+            reasons.append(f"Above upper Bollinger Band (%B={bb_pct_b:.2f})")
+        elif bb_pct_b > 0.8:
+            score -= 0.5
+            reasons.append(f"Near upper Bollinger Band (%B={bb_pct_b:.2f})")
+
+        # Stochastic %K (±1.0 max)
+        if stoch_k < 20:
+            score += 1.0
+            reasons.append(f"Stochastic oversold (%K={stoch_k:.1f})")
+        elif stoch_k > 80:
+            score -= 1.0
+            reasons.append(f"Stochastic overbought (%K={stoch_k:.1f})")
+
+        # ADX — trend strength multiplier (0.8x to 1.2x)
+        if adx < 20:
+            score *= 0.8
+            reasons.append(f"Weak trend (ADX={adx:.1f}) — signal discounted")
+        elif adx > 40:
+            score *= 1.2
+            reasons.append(f"Strong trend (ADX={adx:.1f}) — signal boosted")
+
+        # Divergence (±1.5)
+        if divergence and divergence.get("type") != "none":
+            div_conf = divergence.get("confidence", 0)
+            if div_conf >= 0.3:
+                if divergence["type"] == "bullish":
+                    score += 1.5 * div_conf
+                    reasons.append(f"Bullish RSI divergence (conf={div_conf:.0%})")
+                elif divergence["type"] == "bearish":
+                    score -= 1.5 * div_conf
+                    reasons.append(f"Bearish RSI divergence (conf={div_conf:.0%})")
+
+        # Volume confirmation — multiplicative, not additive
         if vol_ratio >= 2.0:
-            amplifier = 1.5 if score > 0 else -1.5 if score < 0 else 0
-            score += amplifier
+            score *= 1.3
             reasons.append(f"Volume spike ({vol_ratio:.1f}x avg) confirms move")
         elif vol_ratio >= self.config.volume_multiplier:
             reasons.append(f"Above-average volume ({vol_ratio:.1f}x)")
         elif vol_ratio < 0.5:
-            score *= 0.7
+            score *= 0.6
             reasons.append(f"Low volume ({vol_ratio:.1f}x) — signal discounted")
 
         # Clamp to range

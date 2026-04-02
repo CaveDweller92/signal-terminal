@@ -118,7 +118,7 @@ function TechnicalContent({ signal }: { signal: Signal }) {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <StatBox
           label="EMA Crossover"
           value={indicators.ema_crossover}
@@ -130,6 +130,33 @@ function TechnicalContent({ signal }: { signal: Signal }) {
           value={signal.tech_score.toFixed(2)}
           subValue="Range: -5 to +5"
           positive={signal.tech_score > 0}
+        />
+        <StatBox
+          label="ADX"
+          value={indicators.adx != null ? indicators.adx.toFixed(1) : '—'}
+          subValue={indicators.adx != null ? (indicators.adx > 40 ? 'Strong trend' : indicators.adx < 20 ? 'Weak trend' : 'Moderate') : undefined}
+          positive={indicators.adx != null ? indicators.adx > 25 : undefined}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <StatBox
+          label="Bollinger %B"
+          value={indicators.bollinger_pct_b != null ? indicators.bollinger_pct_b.toFixed(3) : '—'}
+          subValue={indicators.bollinger_pct_b != null ? (indicators.bollinger_pct_b < 0.2 ? 'Near lower band' : indicators.bollinger_pct_b > 0.8 ? 'Near upper band' : 'Mid-range') : undefined}
+          positive={indicators.bollinger_pct_b != null ? indicators.bollinger_pct_b < 0.5 : undefined}
+        />
+        <StatBox
+          label="Stochastic %K"
+          value={indicators.stochastic_k != null ? indicators.stochastic_k.toFixed(1) : '—'}
+          subValue={indicators.stochastic_k != null ? (indicators.stochastic_k < 20 ? 'Oversold' : indicators.stochastic_k > 80 ? 'Overbought' : 'Neutral') : undefined}
+          positive={indicators.stochastic_k != null ? indicators.stochastic_k < 50 : undefined}
+        />
+        <StatBox
+          label="Divergence"
+          value={indicators.divergence?.type ?? 'none'}
+          subValue={indicators.divergence?.type !== 'none' && indicators.divergence?.confidence != null ? `${(indicators.divergence.confidence * 100).toFixed(0)}% conf` : undefined}
+          positive={indicators.divergence?.type === 'bullish' ? true : indicators.divergence?.type === 'bearish' ? false : undefined}
         />
       </div>
 

@@ -14,8 +14,8 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.db.database import async_session
-from app.engine.analyzer import SignalAnalyzer
 from app.engine.data_provider import get_data_provider
+from app.engine.signal_service import SignalService
 from app.models.screener_result import ScreenerResult
 from app.models.watchlist import DailyWatchlist
 
@@ -98,15 +98,12 @@ async def get_signals(
         except Exception as e:
             logger.debug("Redis cache read failed: %s", e)
 
-    # Cache miss — run analysis
+    # Cache miss — run analysis and persist to DB
     provider = get_data_provider()
-    analyzer = SignalAnalyzer(provider)
-
-    results = []
-    for symbol in symbol_list:
-        signal = await analyzer.analyze(symbol)
-        if signal is not None:
-            results.append(signal)
+    async with async_session() as session:
+        service = SignalService(session, provider)
+        results = await service.analyze_batch(symbol_list)
+        await session.commit()
 
     results.sort(key=lambda s: abs(s["conviction"]), reverse=True)
     now = datetime.now(timezone.utc).isoformat()
@@ -141,8 +138,10 @@ async def get_signal(symbol: str):
         logger.debug("Redis cache read failed: %s", e)
 
     provider = get_data_provider()
-    analyzer = SignalAnalyzer(provider)
-    data = await analyzer.analyze(symbol)
+    async with async_session() as session:
+        service = SignalService(session, provider)
+        data = await service.analyze_and_persist(symbol)
+        await session.commit()
 
     if data is not None:
         try:

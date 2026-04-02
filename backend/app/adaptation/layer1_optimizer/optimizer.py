@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.parameter_snapshot import ParameterSnapshot
 from app.models.position import Position
+from app.models.signal import Signal
 from app.adaptation.layer1_optimizer.parameter_space import (
     PARAMETER_SPACE,
     clamp_params,
@@ -64,8 +65,15 @@ class OnlineOptimizer:
         current_params = await self._get_current_params(db)
         pnl = position.realized_pnl_pct
 
+        # Load linked signal for conviction-weighted learning
+        conviction = 1.0
+        if position.entry_signal_id:
+            signal = await db.get(Signal, position.entry_signal_id)
+            if signal:
+                conviction = abs(signal.conviction)
+
         # Compute parameter adjustments
-        adjusted = self._compute_adjustment(current_params, position, pnl)
+        adjusted = self._compute_adjustment(current_params, position, pnl, conviction)
 
         if adjusted == current_params:
             return None
@@ -89,7 +97,7 @@ class OnlineOptimizer:
         return snapshot
 
     def _compute_adjustment(
-        self, params: dict, position: Position, pnl: float
+        self, params: dict, position: Position, pnl: float, conviction: float = 1.0
     ) -> dict:
         """
         Nudge parameters based on trade outcome.
@@ -97,11 +105,14 @@ class OnlineOptimizer:
         Winners: reinforce the current config slightly
         Losers: push parameters away from current config
 
-        Adjustments are proportional to |pnl| — a big win reinforces more
-        than a small win, a big loss pushes harder than a small loss.
+        Learning rate is scaled by signal conviction — high-conviction losses
+        are stronger learning signals than low-conviction ones.
         """
         adjusted = dict(params)
         lr = self.learning_rate * (self.decay ** self._trade_count)
+
+        # Scale by conviction: high conviction = stronger signal for learning
+        lr *= max(conviction, 0.5)
 
         # Scale adjustment by outcome magnitude (capped at 5% move)
         magnitude = min(abs(pnl) / 100, 0.05)
