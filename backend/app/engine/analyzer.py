@@ -157,11 +157,41 @@ class SignalAnalyzer:
         current_stoch_d = stoch_d[-1] if not np.isnan(stoch_d[-1]) else 50.0
         current_adx = adx[-1] if not np.isnan(adx[-1]) else 25.0
 
+        # --- Weekly trend filter (uses daily bars — no extra API call) ---
+        # Price vs 50-day EMA approximates the weekly trend.
+        # BUY into a weekly downtrend = catching a falling knife.
+        ema_50 = calc_ema(closes, 50)
+        weekly_trend = "neutral"
+        weekly_penalty = 0.0
+        if not np.isnan(ema_50[-1]):
+            pct_from_ema50 = (current_price - ema_50[-1]) / ema_50[-1] * 100
+            if pct_from_ema50 < -8:
+                weekly_trend = "strong_downtrend"
+                weekly_penalty = -1.5  # heavy penalty — likely catching a knife
+            elif pct_from_ema50 < -3:
+                weekly_trend = "downtrend"
+                weekly_penalty = -0.7
+            elif pct_from_ema50 > 8:
+                weekly_trend = "strong_uptrend"
+                weekly_penalty = 0.5  # slight boost — riding momentum
+            elif pct_from_ema50 > 3:
+                weekly_trend = "uptrend"
+                weekly_penalty = 0.3
+
         # --- Score technical signals (range: -5 to +5) ---
         tech_score, tech_reasons = self._score_technical(
             current_rsi, current_histogram, crossover, current_vol_ratio, current_price,
             current_bb_pct_b, current_stoch_k, current_adx, rsi_divergence,
         )
+
+        # Apply weekly trend adjustment
+        if weekly_penalty != 0.0:
+            tech_score += weekly_penalty
+            tech_score = max(-5.0, min(5.0, tech_score))
+            if weekly_penalty < 0:
+                tech_reasons.append(f"Weekly {weekly_trend} — signal discounted")
+            else:
+                tech_reasons.append(f"Weekly {weekly_trend} — signal boosted")
 
         # --- Sentiment: Massive for US, Finnhub for .TO ---
         is_tsx = symbol.endswith(".TO")
