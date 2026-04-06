@@ -1,65 +1,69 @@
 """
 Sentiment Shift Exit Strategy.
 
-Monitors for adverse news on open positions:
-- Negative headlines for LONG positions
-- Positive headlines for SHORT positions
+Monitors for adverse sentiment on open positions using real news data:
+- Negative sentiment for LONG positions
+- Positive sentiment for SHORT positions
+
+Uses the same sentiment providers as the signal analyzer:
+  US stocks → MassiveSentimentAnalyzer (Massive news API + built-in insights)
+  .TO stocks → SentimentAnalyzer (Finnhub + Claude)
 
 Catches things indicators can't: lawsuits, earnings warnings,
 executive departures, product recalls.
-
-Phase 1: Uses simulated sentiment engine.
-Phase 3+: Will use real news API + Claude sentiment analysis.
 """
 
-from app.engine.sentiment import get_sentiment_score
+import logging
+
 from app.models.position import Position
 from app.positions.exit_strategies.base import ExitStrategy, ExitSignalResult, ExitUrgency
+
+logger = logging.getLogger(__name__)
 
 
 class SentimentShiftStrategy(ExitStrategy):
     async def evaluate(
         self, position: Position, current_bar: dict, recent_bars: list[dict]
     ) -> ExitSignalResult | None:
-        sentiment = await get_sentiment_score(position.symbol)
+        # Get the real sentiment provider (same singletons as analyzer)
+        from app.engine.analyzer import _get_massive_sentiment, _get_finnhub_sentiment
 
-        if not sentiment or sentiment["headline_count"] == 0:
+        is_tsx = position.symbol.endswith(".TO")
+        provider = _get_finnhub_sentiment() if is_tsx else _get_massive_sentiment()
+
+        if provider is None:
+            return None
+
+        try:
+            sentiment = await provider.get_sentiment(position.symbol)
+        except Exception as e:
+            logger.debug("SentimentShift: failed to fetch for %s: %s", position.symbol, e)
+            return None
+
+        score = sentiment.get("score", 0.0)
+        reasons = sentiment.get("reasons", [])
+        source = sentiment.get("source", "unknown")
+
+        # No data or neutral — no concern
+        if source in ("none", "error") or abs(score) < 0.5:
             return None
 
         is_long = position.direction == "LONG"
-        score = sentiment["score"]
 
         # Check for adverse sentiment
-        if is_long and score >= -0.3:
-            return None  # Sentiment is neutral or positive, no concern
-        if not is_long and score <= 0.3:
-            return None  # Sentiment is neutral or negative, no concern for shorts
+        if is_long and score >= -0.5:
+            return None  # Sentiment is neutral or positive — no concern
+        if not is_long and score <= 0.5:
+            return None  # Sentiment is neutral or negative — no concern for shorts
 
-        # Count adverse headlines
-        adverse_count = (
-            sentiment["negative_count"] if is_long else sentiment["positive_count"]
-        )
-
-        if adverse_count == 0:
-            return None
-
-        # Determine urgency
-        if abs(score) > 0.7 or adverse_count >= 3:
+        # Determine urgency based on severity
+        if abs(score) >= 2.0:
             urgency = ExitUrgency.HIGH
         else:
             urgency = ExitUrgency.MEDIUM
 
         direction_word = "negative" if is_long else "positive"
-
-        # Get worst headline for the message
-        headlines = sentiment.get("headlines", [])
-        adverse_headlines = [
-            h for h in headlines
-            if (is_long and h["category"] == "negative")
-            or (not is_long and h["category"] == "positive")
-        ]
-        worst = adverse_headlines[0] if adverse_headlines else None
-        worst_text = worst["headline"][:80] if worst else "Multiple adverse headlines"
+        worst_reason = reasons[0][:80] if reasons else "Adverse sentiment detected"
 
         return ExitSignalResult(
             triggered=True,
@@ -69,13 +73,12 @@ class SentimentShiftStrategy(ExitStrategy):
             current_price=current_bar["close"],
             message=(
                 f"SENTIMENT SHIFT on {position.symbol} — "
-                f"{adverse_count} {direction_word} headline(s). "
-                f'Worst: "{worst_text}" (score: {score:.2f})'
+                f"{direction_word} sentiment (score: {score:+.1f}). "
+                f'"{worst_reason}"'
             ),
             details={
                 "sentiment_score": score,
-                "adverse_count": adverse_count,
-                "headline_count": sentiment["headline_count"],
-                "worst_headline": worst_text,
+                "reasons": reasons[:3],
+                "source": source,
             },
         )
