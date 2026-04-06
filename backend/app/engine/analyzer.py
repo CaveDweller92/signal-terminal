@@ -201,15 +201,15 @@ class SignalAnalyzer:
             sentiment_score = sentiment_data["score"]
             sentiment_reasons = sentiment_data["reasons"]
         else:
-            sentiment_score = self._simulated_sentiment(symbol)
-            sentiment_reasons = self._sentiment_reasons(sentiment_score)
+            sentiment_score = 0.0
+            sentiment_reasons = ["No sentiment provider configured"]
         if self._fundamentals is not None:
             fundamental_data = await self._fundamentals.get_fundamentals(symbol)
             fundamental_score = fundamental_data["score"]
             fundamental_reasons = fundamental_data["reasons"]
         else:
-            fundamental_score = self._simulated_fundamental(symbol)
-            fundamental_reasons = self._fundamental_reasons(fundamental_score)
+            fundamental_score = 0.0
+            fundamental_reasons = ["No fundamental provider configured"]
 
         # --- Composite conviction ---
         conviction = (
@@ -394,24 +394,3 @@ class SignalAnalyzer:
 
         return score, reasons
 
-    def _simulated_sentiment(self, symbol: str) -> float:
-        h = hash(f"sentiment_{symbol}") % 1000
-        return round((h / 1000) * 6 - 3, 2)
-
-    def _simulated_fundamental(self, symbol: str) -> float:
-        h = hash(f"fundamental_{symbol}") % 1000
-        return round((h / 1000) * 4 - 2, 2)
-
-    def _sentiment_reasons(self, score: float) -> list[str]:
-        if score > 1:
-            return ["Simulated positive sentiment"]
-        elif score < -1:
-            return ["Simulated negative sentiment"]
-        return ["Simulated neutral sentiment"]
-
-    def _fundamental_reasons(self, score: float) -> list[str]:
-        if score > 0.5:
-            return ["Simulated favorable fundamentals"]
-        elif score < -0.5:
-            return ["Simulated weak fundamentals"]
-        return ["Simulated neutral fundamentals"]
