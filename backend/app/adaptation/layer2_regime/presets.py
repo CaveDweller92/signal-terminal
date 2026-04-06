@@ -31,7 +31,7 @@ REGIME_PRESETS: dict[str, dict] = {
     "trending_down": {
         "rsi_oversold": 25,
         "rsi_overbought": 65,
-        "min_signal_strength": 2.0,
+        "min_signal_strength": 1.2,
         "technical_weight": 0.55,
         "sentiment_weight": 0.3,
         "fundamental_weight": 0.15,
@@ -55,7 +55,7 @@ REGIME_PRESETS: dict[str, dict] = {
     "volatile_choppy": {
         "rsi_oversold": 22,
         "rsi_overbought": 78,
-        "min_signal_strength": 2.5,
+        "min_signal_strength": 1.8,
         "technical_weight": 0.45,
         "sentiment_weight": 0.35,
         "fundamental_weight": 0.2,

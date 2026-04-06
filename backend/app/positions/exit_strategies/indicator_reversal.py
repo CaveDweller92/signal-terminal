@@ -30,8 +30,8 @@ class IndicatorReversalStrategy(ExitStrategy):
         closes = np.array([b["close"] for b in recent_bars])
 
         rsi_period = self.config.get("rsi_period", 14)
-        ema_fast_period = self.config.get("ema_fast", 9)
-        ema_slow_period = self.config.get("ema_slow", 21)
+        ema_fast_period = self.config.get("ema_fast", 10)   # match analyzer (swing)
+        ema_slow_period = self.config.get("ema_slow", 50)   # match analyzer (swing)
         macd_fast = self.config.get("macd_fast", 12)
         macd_slow = self.config.get("macd_slow", 26)
         macd_signal = self.config.get("macd_signal", 9)

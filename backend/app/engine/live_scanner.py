@@ -47,8 +47,13 @@ async def _get_scan_symbols() -> list[str]:
     """
     Resolve the symbols to scan in priority order:
       1. Today's DailyWatchlist (Claude-curated or screener-selected)
-      2. Top 12 most recent ScreenerResult records
+      2. Top N most recent ScreenerResult records (N = watchlist_size)
+
+    Always includes symbols from open positions.
     """
+    from app.config import settings
+    from app.models.position import Position
+
     async with async_session() as session:
         today = date.today()
         result = await session.execute(
@@ -58,19 +63,37 @@ async def _get_scan_symbols() -> list[str]:
             .order_by(DailyWatchlist.screener_rank)
         )
         symbols = [row[0] for row in result.fetchall()]
-        if symbols:
-            logger.debug(f"LiveScanner: using today's watchlist ({len(symbols)} symbols)")
-            return symbols
 
-        result = await session.execute(
-            select(ScreenerResult.symbol)
-            .order_by(ScreenerResult.composite_score.desc())
-            .limit(12)
+        if not symbols:
+            result = await session.execute(
+                select(ScreenerResult.symbol)
+                .order_by(ScreenerResult.composite_score.desc())
+                .limit(settings.watchlist_size)
+            )
+            symbols = [row[0] for row in result.fetchall()]
+
+        # Always include open position symbols ON TOP of the full watchlist
+        pos_result = await session.execute(
+            select(Position.symbol).where(Position.status == "OPEN")
         )
-        symbols = [row[0] for row in result.fetchall()]
-        if symbols:
-            logger.debug(f"LiveScanner: using screener results ({len(symbols)} symbols)")
-            return symbols
+        position_symbols = [row[0] for row in pos_result.fetchall()]
+
+        # Watchlist first (full size), then add positions not already in it
+        seen = set()
+        merged: list[str] = []
+        for sym in symbols:
+            if sym not in seen:
+                seen.add(sym)
+                merged.append(sym)
+        for sym in position_symbols:
+            if sym not in seen:
+                seen.add(sym)
+                merged.append(sym)
+
+        if merged:
+            logger.debug(f"LiveScanner: scanning {len(merged)} symbols ({len(position_symbols)} positions + {len(symbols)} watchlist)")
+
+        return merged
 
     logger.debug("LiveScanner: no symbols available — run the screener first")
     return []

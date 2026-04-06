@@ -19,6 +19,9 @@ class StopLossStrategy(ExitStrategy):
         entry = position.entry_price
         is_long = position.direction == "LONG"
 
+        # Use bar low/high for stop check — catches intraday breaches, not just close
+        worst_price = current_bar.get("low", price) if is_long else current_bar.get("high", price)
+
         # Collect all configured stop levels
         stops: list[float] = []
 
@@ -37,10 +40,10 @@ class StopLossStrategy(ExitStrategy):
         # Use tightest stop
         if is_long:
             stop_level = max(stops)  # Highest stop = tightest for long
-            triggered = price <= stop_level
+            triggered = worst_price <= stop_level
         else:
             stop_level = min(stops)  # Lowest stop = tightest for short
-            triggered = price >= stop_level
+            triggered = worst_price >= stop_level
 
         if triggered:
             loss_pct = abs(price - entry) / entry * 100
@@ -64,10 +67,10 @@ class StopLossStrategy(ExitStrategy):
 
         # Warning if approaching stop (within 30% of distance)
         if is_long:
-            distance = price - stop_level
+            distance = worst_price - stop_level
             total_distance = entry - stop_level
         else:
-            distance = stop_level - price
+            distance = stop_level - worst_price
             total_distance = stop_level - entry
 
         if total_distance > 0 and distance / total_distance < 0.3:

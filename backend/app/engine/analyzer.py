@@ -188,10 +188,18 @@ class SignalAnalyzer:
             + fundamental_score * self.config.fundamental_weight
         )
 
-        # --- Determine signal type ---
+        # --- Determine signal type with risk/reward filter ---
         signal_type = "HOLD"
         if conviction >= self.config.min_signal_strength:
-            signal_type = "BUY"
+            # Check risk/reward: potential reward must be >= 1.5× potential risk
+            reward = profit_target - current_price
+            risk = current_price - stop_loss
+            if risk > 0 and reward / risk >= 1.5:
+                signal_type = "BUY"
+            elif risk <= 0:
+                signal_type = "BUY"  # stop below zero edge case, allow it
+            else:
+                tech_reasons.append(f"R:R too low ({reward/risk:.1f}:1, need 1.5:1)")
         elif conviction <= -self.config.min_signal_strength:
             signal_type = "SELL"
 

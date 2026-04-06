@@ -40,9 +40,13 @@ async def _resolve_symbols() -> list[str]:
     """
     Resolve symbols to scan in priority order:
       1. Today's DailyWatchlist
-      2. Top 12 most recent ScreenerResult records
+      2. Top N most recent ScreenerResult records (N = watchlist_size)
       3. Empty list (no hardcoded fallback)
+
+    Always includes symbols from open positions so they get fresh signals.
     """
+    from app.models.position import Position
+
     async with async_session() as session:
         today = date.today()
         result = await session.execute(
@@ -52,15 +56,34 @@ async def _resolve_symbols() -> list[str]:
             .order_by(DailyWatchlist.screener_rank)
         )
         symbols = [row[0] for row in result.fetchall()]
-        if symbols:
-            return symbols
 
-        result = await session.execute(
-            select(ScreenerResult.symbol)
-            .order_by(ScreenerResult.composite_score.desc())
-            .limit(12)
+        if not symbols:
+            result = await session.execute(
+                select(ScreenerResult.symbol)
+                .order_by(ScreenerResult.composite_score.desc())
+                .limit(settings.watchlist_size)
+            )
+            symbols = [row[0] for row in result.fetchall()]
+
+        # Always include open position symbols ON TOP of the full watchlist
+        pos_result = await session.execute(
+            select(Position.symbol).where(Position.status == "OPEN")
         )
-        return [row[0] for row in result.fetchall()]
+        position_symbols = [row[0] for row in pos_result.fetchall()]
+
+        # Watchlist first (full size), then add any positions not already in it
+        seen = set()
+        merged: list[str] = []
+        for sym in symbols:
+            if sym not in seen:
+                seen.add(sym)
+                merged.append(sym)
+        for sym in position_symbols:
+            if sym not in seen:
+                seen.add(sym)
+                merged.append(sym)
+
+        return merged
 
 
 @router.get("")

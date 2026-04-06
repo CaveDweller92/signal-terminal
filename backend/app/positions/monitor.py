@@ -27,6 +27,7 @@ from app.positions.exit_strategies import (
     SentimentShiftStrategy,
     StopLossStrategy,
     TimeBasedExitStrategy,
+    TrailingStopStrategy,
 )
 from app.positions.manager import PositionManager
 
@@ -39,10 +40,11 @@ class PositionMonitor:
         self.data = data_provider
         self.manager = PositionManager(db, data_provider)
 
-        # Build the composite exit engine with all 5 strategies
+        # Build the composite exit engine with all 6 strategies
         self.exit_engine = CompositeExitStrategy(
             strategies=[
                 StopLossStrategy(),
+                TrailingStopStrategy(trail_atr_multiplier=2.0, activation_pct=1.5),
                 ProfitTargetStrategy(),
                 IndicatorReversalStrategy(),
                 SentimentShiftStrategy(),
@@ -68,12 +70,24 @@ class PositionMonitor:
         return all_alerts
 
     async def _check_position(self, position: Position) -> list[dict]:
-        """Check one position against all exit strategies using daily bars."""
-        bars = await self.data.get_daily(position.symbol)
-        if not bars:
+        """Check one position against exit strategies.
+
+        Uses intraday bars for price/stop/target checks (catches intraday breaches),
+        with daily bars for indicator-based strategies (EMA, RSI, MACD).
+        """
+        # Intraday bars for current price + stop/target evaluation
+        intraday = await self.data.get_intraday(position.symbol)
+        daily = await self.data.get_daily(position.symbol)
+
+        if not daily:
             return []
 
-        current_bar = bars[-1]
+        # Use latest intraday bar if available, else fall back to daily
+        if intraday:
+            current_bar = intraday[-1]
+        else:
+            current_bar = daily[-1]
+
         price = current_bar["close"]
 
         # Update position tracking fields
@@ -98,8 +112,8 @@ class PositionMonitor:
         position.bars_held = max(days_held, 1)
         position.last_updated = datetime.utcnow()
 
-        # Run exit strategies
-        exit_signals = await self.exit_engine.evaluate_all(position, current_bar, bars)
+        # Run exit strategies — current_bar has intraday price, daily bars for indicators
+        exit_signals = await self.exit_engine.evaluate_all(position, current_bar, daily)
 
         # Save and build alerts
         alerts: list[dict] = []

@@ -122,11 +122,16 @@ class OnlineOptimizer:
         exit_reason = position.exit_reason or "manual"
 
         if exit_reason == "stop_loss":
-            # Stop was hit — was it too tight?
-            if pnl < -1.0:
-                # Big loss from stop → widen stops slightly
-                adjusted["atr_stop_multiplier"] = params.get("atr_stop_multiplier", 1.5) + lr * 0.1
-                adjusted["default_stop_loss_pct"] = params.get("default_stop_loss_pct", 2.0) + lr * 0.2
+            stop_pct = params.get("default_stop_loss_pct", 5.0)
+            if abs(pnl) > stop_pct * 2:
+                # Loss far exceeds stop (gap-down) — tighten stops, raise signal bar
+                adjusted["atr_stop_multiplier"] = params.get("atr_stop_multiplier", 2.5) - lr * 0.1
+                adjusted["default_stop_loss_pct"] = params.get("default_stop_loss_pct", 5.0) - lr * 0.3
+                adjusted["min_signal_strength"] = params.get("min_signal_strength", 1.5) + lr * 0.2
+            elif pnl < -1.0:
+                # Normal stop hit — stop may have been too tight, widen slightly
+                adjusted["atr_stop_multiplier"] = params.get("atr_stop_multiplier", 2.5) + lr * 0.1
+                adjusted["default_stop_loss_pct"] = params.get("default_stop_loss_pct", 5.0) + lr * 0.2
 
         elif exit_reason == "profit_target":
             # Target hit — good outcome, but was target too conservative?

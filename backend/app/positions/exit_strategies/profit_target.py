@@ -17,6 +17,9 @@ class ProfitTargetStrategy(ExitStrategy):
         entry = position.entry_price
         is_long = position.direction == "LONG"
 
+        # Use bar high/low for target check — catches intraday touches
+        best_price = current_bar.get("high", price) if is_long else current_bar.get("low", price)
+
         targets: list[float] = []
         if position.profit_target_price:
             targets.append(position.profit_target_price)
@@ -30,11 +33,11 @@ class ProfitTargetStrategy(ExitStrategy):
             return None
 
         if is_long:
-            target_level = min(targets)  # Conservative target for long
-            triggered = price >= target_level
+            target_level = max(targets)  # Use wider target — let winners run
+            triggered = best_price >= target_level
             gain_pct = (price - entry) / entry * 100
         else:
-            target_level = max(targets)
+            target_level = min(targets)  # Use wider target for shorts
             triggered = price <= target_level
             gain_pct = (entry - price) / entry * 100
 
