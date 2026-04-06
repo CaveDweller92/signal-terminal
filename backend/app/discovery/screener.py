@@ -29,7 +29,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.engine.data_provider import DataProvider
-from app.engine.indicators import calc_rsi, calc_ema, calc_macd, calc_volume_ratio
+from app.engine.indicators import (
+    calc_adx,
+    calc_bollinger_bands,
+    calc_ema,
+    calc_macd,
+    calc_rsi,
+    calc_stochastic,
+    calc_volume_ratio,
+    detect_divergence,
+)
 from app.models.screener_result import ScreenerResult
 from app.models.stock_universe import StockUniverse
 
@@ -205,32 +214,70 @@ class PremarketScreener:
         momentum_score = 5.0 + min(2.5, max(-2.5, momentum_5d * 0.5)) + min(2.5, max(-2.5, momentum_20d * 0.25))
         momentum_score = max(0.0, min(10.0, momentum_score))
 
-        # 3. Technical score — RSI + EMA trend + MACD alignment (daily)
+        # 3. Technical score — 7 indicators matching the analyzer (daily)
+        daily_highs = np.array([b["high"] for b in daily])
+        daily_lows = np.array([b["low"] for b in daily])
+
         rsi = calc_rsi(daily_closes)
         current_rsi = float(rsi[-1]) if len(rsi) > 0 and not np.isnan(rsi[-1]) else 50.0
 
         ema_fast = calc_ema(daily_closes, 10)
         ema_slow = calc_ema(daily_closes, 50)
         ema_bullish = (
-            len(ema_fast) > 0
-            and len(ema_slow) > 0
-            and not np.isnan(ema_fast[-1])
-            and not np.isnan(ema_slow[-1])
+            not np.isnan(ema_fast[-1]) and not np.isnan(ema_slow[-1])
             and ema_fast[-1] > ema_slow[-1]
         )
 
         _, _, histogram = calc_macd(daily_closes)
-        macd_bull = len(histogram) > 0 and not np.isnan(histogram[-1]) and histogram[-1] > 0
+        macd_bull = not np.isnan(histogram[-1]) and histogram[-1] > 0
 
-        tech_score = 5.0
+        _, _, _, bb_pct_b = calc_bollinger_bands(daily_closes)
+        current_bb = float(bb_pct_b[-1]) if not np.isnan(bb_pct_b[-1]) else 0.5
+
+        stoch_k, _ = calc_stochastic(daily_highs, daily_lows, daily_closes)
+        current_stoch = float(stoch_k[-1]) if not np.isnan(stoch_k[-1]) else 50.0
+
+        adx = calc_adx(daily_highs, daily_lows, daily_closes)
+        current_adx = float(adx[-1]) if not np.isnan(adx[-1]) else 25.0
+
+        divergence = detect_divergence(daily_closes, rsi)
+
+        tech_score = 3.0  # base
+
+        # RSI (0-2 pts)
         if current_rsi < 35:
-            tech_score += 2.5  # oversold bounce opportunity
+            tech_score += 2.0  # oversold bounce
         elif current_rsi > 65:
             tech_score += 1.0  # momentum
+
+        # EMA trend (0-1.5 pts)
         if ema_bullish:
             tech_score += 1.5
+
+        # MACD (0-1 pt)
         if macd_bull:
             tech_score += 1.0
+
+        # Bollinger Bands (0-1 pt)
+        if current_bb < 0.1:
+            tech_score += 1.0  # squeezed below lower band
+        elif current_bb < 0.25:
+            tech_score += 0.5  # near lower band
+
+        # Stochastic (0-1 pt)
+        if current_stoch < 20:
+            tech_score += 1.0  # oversold
+        elif current_stoch > 80:
+            tech_score += 0.5  # strong momentum
+
+        # ADX trend strength (multiplier)
+        if current_adx > 30:
+            tech_score *= 1.15  # trending — signals more reliable
+
+        # Divergence (0-1 pt)
+        if divergence.get("type") == "bullish" and divergence.get("confidence", 0) >= 0.3:
+            tech_score += 1.0
+
         tech_score = min(10.0, tech_score)
 
         # 4. Fundamental score — stock quality (Sharpe, drawdown, stability)
