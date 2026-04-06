@@ -188,6 +188,19 @@ class SignalAnalyzer:
             + fundamental_score * self.config.fundamental_weight
         )
 
+        # --- Exit levels (must be computed before R:R filter) ---
+        stop_loss = round(float(current_price - current_atr * self.config.atr_stop_multiplier), 2)
+        profit_target = round(float(current_price + current_atr * self.config.atr_target_multiplier), 2)
+
+        # Fallback to percentage-based if ATR levels are unreasonable
+        pct_stop = round(current_price * (1 - self.config.default_stop_loss_pct / 100), 2)
+        pct_target = round(current_price * (1 + self.config.default_profit_target_pct / 100), 2)
+
+        if stop_loss >= current_price:
+            stop_loss = pct_stop
+        if profit_target <= current_price:
+            profit_target = pct_target
+
         # --- Determine signal type with risk/reward filter ---
         signal_type = "HOLD"
         if conviction >= self.config.min_signal_strength:
@@ -202,19 +215,6 @@ class SignalAnalyzer:
                 tech_reasons.append(f"R:R too low ({reward/risk:.1f}:1, need 1.5:1)")
         elif conviction <= -self.config.min_signal_strength:
             signal_type = "SELL"
-
-        # --- Exit levels ---
-        stop_loss = round(float(current_price - current_atr * self.config.atr_stop_multiplier), 2)
-        profit_target = round(float(current_price + current_atr * self.config.atr_target_multiplier), 2)
-
-        # Fallback to percentage-based if ATR levels are unreasonable
-        pct_stop = round(current_price * (1 - self.config.default_stop_loss_pct / 100), 2)
-        pct_target = round(current_price * (1 + self.config.default_profit_target_pct / 100), 2)
-
-        if stop_loss >= current_price:
-            stop_loss = pct_stop
-        if profit_target <= current_price:
-            profit_target = pct_target
 
         return {
             "symbol": symbol,
