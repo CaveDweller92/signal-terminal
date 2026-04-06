@@ -5,7 +5,7 @@ Runs daily at 5:00 AM ET. Scores each stock on 6 dimensions:
   1. Volume score     — relative volume vs 20-day average
   2. Gap score        — pre-market gap percentage
   3. Technical score  — RSI, EMA trend, MACD alignment
-  4. Fundamental score — 20-day price momentum + Sharpe-like ratio (from daily data)
+  4. Fundamental score — stock quality (Sharpe ratio, max drawdown, price stability)
   5. News score       — Massive news for US / Finnhub for .TO (last 3 days)
   6. Sector score     — SPDR sector ETF (US) or iShares TSX sector ETF (CA)
                         5-day return relative to SPY / XIU.TO
@@ -233,7 +233,7 @@ class PremarketScreener:
             tech_score += 1.0
         tech_score = min(10.0, tech_score)
 
-        # 4. Fundamental score — 20-day price momentum + return/risk (Sharpe proxy)
+        # 4. Fundamental score — stock quality (Sharpe, drawdown, stability)
         fundamental_score = self._calc_fundamental_score(daily_closes)
 
         # 5. News score — Finnhub article count (last 7 days)
@@ -271,40 +271,60 @@ class PremarketScreener:
 
     def _calc_fundamental_score(self, daily_closes: np.ndarray) -> float:
         """
-        Price-based fundamental proxy using 20-day momentum and Sharpe-like ratio.
-        Uses data already fetched — no extra API calls.
+        Stock quality score — measures consistency and risk-adjusted returns.
+        Distinct from momentum (which measures direction/speed).
+
+        Components:
+          1. Sharpe-like ratio (return per unit of risk)
+          2. Drawdown resilience (max drawdown over 20 days)
+          3. Price stability (% of days closing above 20-day SMA)
         """
-        if len(daily_closes) < 5:
+        if len(daily_closes) < 20:
             return 5.0
 
-        score = 3.0  # base
+        score = 0.0
+        recent = daily_closes[-20:]
 
-        # 20-day momentum
-        lookback = min(20, len(daily_closes) - 1)
-        momentum_pct = (daily_closes[-1] - daily_closes[-lookback - 1]) / daily_closes[-lookback - 1] * 100
-        if momentum_pct > 10:
-            score += 4.0
-        elif momentum_pct > 5:
-            score += 3.0
-        elif momentum_pct > 0:
+        # 1. Sharpe-like ratio (0-4 pts)
+        returns = np.diff(recent) / recent[:-1]
+        mean_r = float(np.mean(returns))
+        std_r = float(np.std(returns))
+        if std_r > 0:
+            sharpe = mean_r / std_r
+            if sharpe > 1.0:
+                score += 4.0
+            elif sharpe > 0.5:
+                score += 3.0
+            elif sharpe > 0:
+                score += 1.5
+
+        # 2. Max drawdown resilience (0-3 pts) — shallow drawdown = quality
+        peak = recent[0]
+        max_dd = 0.0
+        for p in recent:
+            if p > peak:
+                peak = p
+            dd = (peak - p) / peak
+            if dd > max_dd:
+                max_dd = dd
+
+        if max_dd < 0.03:
+            score += 3.0  # <3% drawdown — very stable
+        elif max_dd < 0.07:
+            score += 2.0  # <7% — reasonable
+        elif max_dd < 0.12:
+            score += 1.0  # <12% — moderate
+        # >12% drawdown: no points
+
+        # 3. Price stability — % of days above 20-day SMA (0-3 pts)
+        sma_20 = float(np.mean(recent))
+        above_sma = float(np.sum(recent >= sma_20)) / len(recent)
+        if above_sma >= 0.7:
+            score += 3.0  # 70%+ days above SMA — strong support
+        elif above_sma >= 0.5:
             score += 2.0
-        elif momentum_pct > -5:
+        elif above_sma >= 0.35:
             score += 1.0
-        # negative momentum below -5%: no bonus
-
-        # Return/risk ratio (Sharpe proxy, annualised not needed — just relative)
-        returns = np.diff(daily_closes) / daily_closes[:-1]
-        if len(returns) >= 5:
-            mean_r = float(np.mean(returns))
-            std_r = float(np.std(returns))
-            if std_r > 0:
-                sharpe = mean_r / std_r
-                if sharpe > 1.0:
-                    score += 3.0
-                elif sharpe > 0.5:
-                    score += 2.0
-                elif sharpe > 0:
-                    score += 1.0
 
         return min(10.0, score)
 
