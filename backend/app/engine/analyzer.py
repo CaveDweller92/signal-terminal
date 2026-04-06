@@ -21,6 +21,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 from app.engine.data_provider import DataProvider
 from app.engine.fundamental_analyzer import FundamentalAnalyzer
+from app.engine.massive_sentiment import MassiveSentimentAnalyzer
 from app.engine.sentiment_analyzer import SentimentAnalyzer
 from app.engine.indicators import (
     calc_adx,
@@ -70,16 +71,29 @@ class AnalyzerConfig:
 
 
 # Module-level singletons — preserves in-memory caches across requests
-_sentiment_singleton: SentimentAnalyzer | None = None
+# US stocks use Massive (unlimited); .TO stocks use Finnhub (low volume, within limits)
+_massive_sentiment_singleton: MassiveSentimentAnalyzer | None = None
+_finnhub_sentiment_singleton: SentimentAnalyzer | None = None
 _fundamental_singleton: FundamentalAnalyzer | None = None
 
 
-def _get_sentiment() -> SentimentAnalyzer | None:
-    global _sentiment_singleton
+def _get_massive_sentiment() -> MassiveSentimentAnalyzer | None:
+    global _massive_sentiment_singleton
+    if settings.massive_api_key:
+        if _massive_sentiment_singleton is None:
+            _massive_sentiment_singleton = MassiveSentimentAnalyzer(
+                settings.massive_api_key, settings.anthropic_api_key
+            )
+        return _massive_sentiment_singleton
+    return None
+
+
+def _get_finnhub_sentiment() -> SentimentAnalyzer | None:
+    global _finnhub_sentiment_singleton
     if settings.finnhub_api_key and settings.anthropic_api_key:
-        if _sentiment_singleton is None:
-            _sentiment_singleton = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
-        return _sentiment_singleton
+        if _finnhub_sentiment_singleton is None:
+            _finnhub_sentiment_singleton = SentimentAnalyzer(settings.finnhub_api_key, settings.anthropic_api_key)
+        return _finnhub_sentiment_singleton
     return None
 
 
@@ -96,7 +110,8 @@ class SignalAnalyzer:
     def __init__(self, data_provider: DataProvider, config: AnalyzerConfig | None = None):
         self.data = data_provider
         self.config = config or AnalyzerConfig()
-        self._sentiment = _get_sentiment()
+        self._massive_sentiment = _get_massive_sentiment()
+        self._finnhub_sentiment = _get_finnhub_sentiment()
         self._fundamentals = _get_fundamentals()
 
     async def analyze(self, symbol: str) -> dict:
@@ -148,9 +163,11 @@ class SignalAnalyzer:
             current_bb_pct_b, current_stoch_k, current_adx, rsi_divergence,
         )
 
-        # --- Sentiment & fundamental ---
-        if self._sentiment is not None:
-            sentiment_data = await self._sentiment.get_sentiment(symbol)
+        # --- Sentiment: Massive for US, Finnhub for .TO ---
+        is_tsx = symbol.endswith(".TO")
+        sentiment_provider = self._finnhub_sentiment if is_tsx else self._massive_sentiment
+        if sentiment_provider is not None:
+            sentiment_data = await sentiment_provider.get_sentiment(symbol)
             sentiment_score = sentiment_data["score"]
             sentiment_reasons = sentiment_data["reasons"]
         else:

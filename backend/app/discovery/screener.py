@@ -6,7 +6,7 @@ Runs daily at 5:00 AM ET. Scores each stock on 6 dimensions:
   2. Gap score        — pre-market gap percentage
   3. Technical score  — RSI, EMA trend, MACD alignment
   4. Fundamental score — 20-day price momentum + Sharpe-like ratio (from daily data)
-  5. News score       — Finnhub article count/recency (last 3 days)
+  5. News score       — Massive news for US / Finnhub for .TO (last 3 days)
   6. Sector score     — SPDR sector ETF (US) or iShares TSX sector ETF (CA)
                         5-day return relative to SPY / XIU.TO
 
@@ -75,11 +75,10 @@ class PremarketScreener:
         "sector": 0.20,
     }
 
-    # Massive has unlimited API calls. Finnhub free tier is 60 calls/min.
-    # 30 stocks/batch × 1 Finnhub call each, with 35s delay ≈ 51 calls/min — safe.
-    # (40/batch at 45s risks overlap: 40+40=80 in a 45s rolling window)
-    BATCH_SIZE = 30
-    BATCH_DELAY_SECS: float = 35.0
+    # Massive (US news) is unlimited. Finnhub (only .TO news) has 60 calls/min
+    # but TSX stocks are a small fraction of the universe.
+    BATCH_SIZE = 50
+    BATCH_DELAY_SECS: float = 2.0
 
     def __init__(self, data_provider: DataProvider):
         self.data = data_provider
@@ -311,30 +310,19 @@ class PremarketScreener:
 
     async def _fetch_news_score(self, symbol: str) -> tuple[float, bool]:
         """
-        Fetch recent Finnhub news article count as a catalyst proxy.
+        Fetch recent news article count as a catalyst proxy.
+        US stocks use Massive /v2/reference/news (unlimited).
+        .TO stocks use Finnhub /company-news (low volume, within 60/min limit).
         Returns (score 0-10, has_catalyst).
-        Falls back to neutral (5.0, False) if Finnhub key not set or request fails.
         """
-        if not settings.finnhub_api_key:
-            return 5.0, False
+        is_tsx = symbol.endswith(".TO")
 
-        today = date.today()
-        from_date = (today - timedelta(days=3)).isoformat()
-        to_date = today.isoformat()
-        url = (
-            f"https://finnhub.io/api/v1/company-news"
-            f"?symbol={symbol}&from={from_date}&to={to_date}"
-            f"&token={settings.finnhub_api_key}"
-        )
+        if is_tsx:
+            count = await self._fetch_news_count_finnhub(symbol)
+        else:
+            count = await self._fetch_news_count_massive(symbol)
 
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(url)
-            if resp.status_code != 200:
-                return 5.0, False
-            articles = resp.json()
-            count = len(articles) if isinstance(articles, list) else 0
-        except Exception:
+        if count is None:
             return 5.0, False
 
         has_catalyst = count >= 3
@@ -350,6 +338,55 @@ class PremarketScreener:
             score = min(10.0, 7.0 + (count - 5) * 0.3)
 
         return score, has_catalyst
+
+    async def _fetch_news_count_massive(self, symbol: str) -> int | None:
+        """Fetch news count from Massive /v2/reference/news (unlimited)."""
+        if not settings.massive_api_key:
+            return None
+
+        today = date.today()
+        from_date = (today - timedelta(days=3)).isoformat()
+        url = (
+            f"https://api.massive.com/v2/reference/news"
+            f"?ticker={symbol}"
+            f"&published_utc.gte={from_date}"
+            f"&limit=20&sort=published_utc&order=desc"
+            f"&apiKey={settings.massive_api_key}"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            results = data.get("results", [])
+            return len(results) if isinstance(results, list) else 0
+        except Exception:
+            return None
+
+    async def _fetch_news_count_finnhub(self, symbol: str) -> int | None:
+        """Fetch news count from Finnhub /company-news (for .TO stocks)."""
+        if not settings.finnhub_api_key:
+            return None
+
+        finnhub_symbol = symbol.replace(".TO", "") if symbol.endswith(".TO") else symbol
+        today = date.today()
+        from_date = (today - timedelta(days=3)).isoformat()
+        to_date = today.isoformat()
+        url = (
+            f"https://finnhub.io/api/v1/company-news"
+            f"?symbol={finnhub_symbol}&from={from_date}&to={to_date}"
+            f"&token={settings.finnhub_api_key}"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            articles = resp.json()
+            return len(articles) if isinstance(articles, list) else 0
+        except Exception:
+            return None
 
     async def _fetch_sector_performance(self) -> dict[str, dict[str, float]]:
         """

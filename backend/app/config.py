@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # App
     timezone: str = "America/New_York"
     screener_universes: str = "sp500,nasdaq100,tsx"
-    watchlist_size: int = 12
+    watchlist_size: int = 20
 
     # Trading Mode
     trading_mode: str = "swing"  # "swing" or "day"
