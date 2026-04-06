@@ -65,15 +65,16 @@ class OnlineOptimizer:
         current_params = await self._get_current_params(db)
         pnl = position.realized_pnl_pct
 
-        # Load linked signal for conviction-weighted learning
+        # Load linked signal for conviction-weighted learning + component scores
         conviction = 1.0
+        signal = None
         if position.entry_signal_id:
             signal = await db.get(Signal, position.entry_signal_id)
             if signal:
                 conviction = abs(signal.conviction)
 
         # Compute parameter adjustments
-        adjusted = self._compute_adjustment(current_params, position, pnl, conviction)
+        adjusted = self._compute_adjustment(current_params, position, pnl, conviction, signal)
 
         if adjusted == current_params:
             return None
@@ -97,7 +98,8 @@ class OnlineOptimizer:
         return snapshot
 
     def _compute_adjustment(
-        self, params: dict, position: Position, pnl: float, conviction: float = 1.0
+        self, params: dict, position: Position, pnl: float,
+        conviction: float = 1.0, signal: Signal | None = None,
     ) -> dict:
         """
         Nudge parameters based on trade outcome.
@@ -164,11 +166,52 @@ class OnlineOptimizer:
             # Raise the bar for signals
             adjusted["min_signal_strength"] = params.get("min_signal_strength", 2.0) + lr * magnitude * 2
 
+        # Adapt conviction weights based on which component predicted correctly
+        adjusted = self._adjust_weights(adjusted, pnl, lr, signal)
+
         # Clamp and normalize
         adjusted = clamp_params(adjusted)
         adjusted = validate_weights(adjusted)
 
         return adjusted
+
+    def _adjust_weights(
+        self, params: dict, pnl: float, lr: float, signal: Signal | None = None,
+    ) -> dict:
+        """
+        Shift conviction weights toward components that predicted correctly.
+
+        Uses the linked signal's tech_score, sentiment_score, fundamental_score
+        to identify which component was the strongest contributor.
+
+        Winners: boost the dominant component's weight (it predicted right).
+        Losers: reduce the dominant component's weight (it predicted wrong).
+
+        validate_weights() normalizes to sum=1.0 afterward.
+        """
+        if signal is None:
+            return params
+
+        scores = {
+            "technical_weight": abs(signal.tech_score),
+            "sentiment_weight": abs(signal.sentiment_score),
+            "fundamental_weight": abs(signal.fundamental_score),
+        }
+
+        # Find which component had the strongest score at entry
+        dominant = max(scores, key=scores.get)
+
+        # Small nudge per trade — weights shift gradually
+        nudge = lr * 0.02
+
+        if pnl > 0:
+            # Winner: boost the dominant component
+            params[dominant] = params.get(dominant, 0.3) + nudge
+        else:
+            # Loser: reduce the dominant component
+            params[dominant] = params.get(dominant, 0.3) - nudge
+
+        return params
 
     async def _get_current_params(self, db: AsyncSession) -> dict:
         """Get the most recent parameter snapshot, or defaults."""
