@@ -76,6 +76,7 @@ class PositionResponse(BaseModel):
     high_since_entry: float | None = None
     low_since_entry: float | None = None
     bars_held: int = 0
+    effective_stop: float | None = None
 
     # Exit info (filled when closed)
     exit_price: float | None = None

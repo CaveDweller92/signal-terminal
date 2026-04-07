@@ -11,6 +11,12 @@ export function PositionRow({ position, onEdit, onClose }: PositionRowProps) {
   const directionColor =
     position.direction === 'LONG' ? 'text-emerald-400' : 'text-red-400';
 
+  // Determine if the effective stop differs from the original fixed stop (i.e. trailing is active)
+  const effectiveStop = position.effective_stop ?? position.stop_loss_price;
+  const isTrailing = effectiveStop !== null
+    && position.stop_loss_price !== null
+    && effectiveStop !== position.stop_loss_price;
+
   return (
     <div className="px-4 py-3 border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors">
       <div className="flex items-center justify-between mb-1.5">
@@ -46,9 +52,15 @@ export function PositionRow({ position, onEdit, onClose }: PositionRowProps) {
               Now <span className="text-zinc-300">${position.current_price.toFixed(2)}</span>
             </span>
           )}
-          {position.stop_loss_price !== null && (
-            <span>
-              SL <span className="text-red-400">${position.stop_loss_price.toFixed(2)}</span>
+          {effectiveStop !== null && (
+            <span title={isTrailing
+              ? `Trailing stop (original SL: $${position.stop_loss_price?.toFixed(2) ?? 'N/A'})`
+              : 'Fixed stop loss'
+            }>
+              {isTrailing ? 'TS' : 'SL'}{' '}
+              <span className={isTrailing ? 'text-amber-400' : 'text-red-400'}>
+                ${effectiveStop.toFixed(2)}
+              </span>
             </span>
           )}
           {position.profit_target_price !== null && (

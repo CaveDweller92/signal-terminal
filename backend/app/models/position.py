@@ -51,6 +51,7 @@ class Position(Base):
     high_since_entry: Mapped[float | None] = mapped_column(Float, nullable=True)
     low_since_entry: Mapped[float | None] = mapped_column(Float, nullable=True)
     bars_held: Mapped[int] = mapped_column(Integer, default=0)
+    effective_stop: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_updated: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Exit info (filled on close)

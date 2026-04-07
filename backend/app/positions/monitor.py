@@ -13,9 +13,11 @@ For each open position:
 import logging
 from datetime import datetime
 
+import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.data_provider import DataProvider
+from app.engine.indicators import calc_atr
 from app.models.exit_signal import ExitSignal
 from app.models.position import Position
 from app.positions.exit_strategies import (
@@ -112,6 +114,9 @@ class PositionMonitor:
         position.bars_held = max(days_held, 1)
         position.last_updated = datetime.utcnow()
 
+        # Compute effective stop: tightest of fixed stop, pct stop, and trailing stop
+        position.effective_stop = self._compute_effective_stop(position, price, daily)
+
         # Run exit strategies — current_bar has intraday price, daily bars for indicators
         exit_signals = await self.exit_engine.evaluate_all(position, current_bar, daily)
 
@@ -146,3 +151,48 @@ class PositionMonitor:
 
         await self.db.flush()
         return alerts
+
+    def _compute_effective_stop(
+        self, position: Position, price: float, daily_bars: list[dict]
+    ) -> float | None:
+        """Return the tightest stop across fixed, percentage, and trailing stops."""
+        is_long = position.direction == "LONG"
+        entry = position.entry_price
+        stops: list[float] = []
+
+        # Fixed stop
+        if position.stop_loss_price:
+            stops.append(position.stop_loss_price)
+
+        # Percentage stop
+        if position.stop_loss_pct:
+            if is_long:
+                stops.append(entry * (1 - position.stop_loss_pct / 100))
+            else:
+                stops.append(entry * (1 + position.stop_loss_pct / 100))
+
+        # Trailing stop (same logic as TrailingStopStrategy)
+        if len(daily_bars) >= 15:
+            profit_pct = ((price - entry) / entry * 100) if is_long else ((entry - price) / entry * 100)
+            if profit_pct >= 1.5:
+                highs = np.array([b["high"] for b in daily_bars])
+                lows = np.array([b["low"] for b in daily_bars])
+                closes = np.array([b["close"] for b in daily_bars])
+                atr = calc_atr(highs, lows, closes)
+                current_atr = atr[-1] if not np.isnan(atr[-1]) else price * 0.02
+                trail_distance = current_atr * 2.0
+
+                if is_long:
+                    high_water = position.high_since_entry or price
+                    trail_stop = max(high_water - trail_distance, entry)
+                    stops.append(trail_stop)
+                else:
+                    low_water = position.low_since_entry or price
+                    trail_stop = min(low_water + trail_distance, entry)
+                    stops.append(trail_stop)
+
+        if not stops:
+            return None
+
+        # Tightest = highest for long, lowest for short
+        return round(max(stops) if is_long else min(stops), 2)

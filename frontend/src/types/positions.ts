@@ -26,6 +26,7 @@ export interface Position {
   high_since_entry: number | null;
   low_since_entry: number | null;
   bars_held: number;
+  effective_stop: number | null;
 
   // Exit info (filled when closed)
   exit_price: number | null;
