@@ -147,7 +147,10 @@ class SignalAnalyzer:
         adx = calc_adx(highs, lows, closes)
         rsi_divergence = detect_divergence(closes, rsi)
 
-        current_price = closes[-1]
+        # Use latest intraday price if available (live during market hours),
+        # fall back to last daily close (after hours / weekends)
+        intraday = await self.data.get_intraday(symbol, bars=1)
+        current_price = intraday[-1]["close"] if intraday else closes[-1]
         current_rsi = rsi[-1] if not np.isnan(rsi[-1]) else 50.0
         current_histogram = histogram[-1] if not np.isnan(histogram[-1]) else 0.0
         current_atr = atr[-1] if not np.isnan(atr[-1]) else current_price * 0.02

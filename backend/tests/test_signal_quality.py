@@ -42,7 +42,16 @@ class MockDataProvider(DataProvider):
         return bars
 
     async def get_intraday(self, symbol: str, bars: int = 78) -> list[dict]:
-        return self._make_bars(bars, 100.0, 0.0)
+        # Return intraday bars consistent with daily trend's latest price
+        if self.daily_prices is not None:
+            base = self.daily_prices[-1]
+        elif self.trend == "strong_down":
+            base = 150.0 + (-1.0 * 59)  # last daily close
+        elif self.trend == "strong_up":
+            base = 50.0 + (1.0 * 59)
+        else:
+            base = 100.0
+        return self._make_bars(bars, base, 0.0)
 
     async def get_daily(self, symbol: str, days: int = 60) -> list[dict]:
         if self.daily_prices is not None:

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Signal } from '../types/market';
 import { fetchSignals } from '../services/api';
 
-const POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes — swing trading
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function isMarketOpen(): boolean {
   const now = new Date();

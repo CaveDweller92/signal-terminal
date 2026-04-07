@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
-_CACHE_TTL = 15 * 60  # 15 minutes — swing trading
+_CACHE_TTL = 5 * 60  # 5 minutes
 
 _redis = None
 
