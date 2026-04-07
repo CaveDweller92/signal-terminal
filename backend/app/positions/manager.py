@@ -41,7 +41,12 @@ class PositionManager:
         # Get current ATR from daily bars — matches SignalAnalyzer
         daily = await self.data.get_daily(symbol)
         bars = await self.data.get_intraday(symbol)
-        atr = self._calc_atr(daily) if daily else self._calc_atr(bars)
+        if daily:
+            atr = self._calc_atr(daily)
+        elif bars:
+            atr = self._calc_atr(bars)
+        else:
+            atr = entry_price * 0.02  # fallback: 2% of price
 
         # Get current regime
         detector = RegimeDetector(self.data)

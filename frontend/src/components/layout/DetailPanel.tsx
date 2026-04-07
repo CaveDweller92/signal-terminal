@@ -41,13 +41,11 @@ export function DetailPanel({ signal }: DetailPanelProps) {
           </div>
         </div>
 
+        {/* Conviction breakdown */}
+        <ConvictionBreakdown signal={signal} />
+
         {/* Quick stats row */}
-        <div className="grid grid-cols-4 gap-2">
-          <StatBox
-            label="Conviction"
-            value={signal.conviction.toFixed(2)}
-            positive={signal.conviction > 0}
-          />
+        <div className="grid grid-cols-3 gap-2 mt-2">
           <StatBox
             label="Stop Loss"
             value={`$${signal.suggested_stop_loss.toFixed(2)}`}
@@ -189,6 +187,85 @@ function FundamentalContent({ signal }: { signal: Signal }) {
         positive={signal.fundamental_score > 0}
       />
       <ReasonsList title="Fundamental Analysis" reasons={signal.reasons.fundamental} />
+    </div>
+  );
+}
+
+function ConvictionBreakdown({ signal }: { signal: Signal }) {
+  // Default weights — these match the backend's current config
+  // TODO: fetch actual weights from /api/adaptation/parameters if needed
+  const tw = 0.55;
+  const sw = 0.30;
+  const fw = 0.15;
+
+  const techContrib = signal.tech_score * tw;
+  const sentContrib = signal.sentiment_score * sw;
+  const fundContrib = signal.fundamental_score * fw;
+
+  const riskPct = ((1 - signal.suggested_stop_loss / signal.price_at_signal) * 100);
+  const rewardPct = ((signal.suggested_profit_target / signal.price_at_signal - 1) * 100);
+  const rr = riskPct > 0 ? rewardPct / riskPct : 0;
+
+  return (
+    <div className="bg-zinc-800/50 rounded-lg px-4 py-3 border border-zinc-700/50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+          Conviction Breakdown
+        </span>
+        <span className={`text-lg font-mono font-bold ${signal.conviction > 0 ? 'text-emerald-400' : signal.conviction < 0 ? 'text-red-400' : 'text-zinc-300'}`}>
+          {signal.conviction > 0 ? '+' : ''}{signal.conviction.toFixed(2)}
+        </span>
+      </div>
+
+      {/* Score bars */}
+      <div className="space-y-1.5">
+        <ScoreRow label="Technical" score={signal.tech_score} weight={tw} contrib={techContrib} range={5} />
+        <ScoreRow label="Sentiment" score={signal.sentiment_score} weight={sw} contrib={sentContrib} range={3} />
+        <ScoreRow label="Fundamental" score={signal.fundamental_score} weight={fw} contrib={fundContrib} range={2} />
+      </div>
+
+      {/* Formula */}
+      <div className="mt-2 pt-2 border-t border-zinc-700/50 text-[10px] font-mono text-zinc-500">
+        <span>{techContrib >= 0 ? '+' : ''}{techContrib.toFixed(2)}</span>
+        <span className="text-zinc-600"> + </span>
+        <span>{sentContrib >= 0 ? '+' : ''}{sentContrib.toFixed(2)}</span>
+        <span className="text-zinc-600"> + </span>
+        <span>{fundContrib >= 0 ? '+' : ''}{fundContrib.toFixed(2)}</span>
+        <span className="text-zinc-600"> = </span>
+        <span className={signal.conviction > 0 ? 'text-emerald-400' : signal.conviction < 0 ? 'text-red-400' : 'text-zinc-300'}>
+          {signal.conviction > 0 ? '+' : ''}{signal.conviction.toFixed(2)}
+        </span>
+        <span className="ml-3 text-zinc-600">R:R {rr.toFixed(1)}:1</span>
+      </div>
+    </div>
+  );
+}
+
+function ScoreRow({ label, score, weight, contrib, range }: {
+  label: string; score: number; weight: number; contrib: number; range: number;
+}) {
+  // Bar width: score / range mapped to 0-100%
+  const pct = Math.min(100, Math.abs(score) / range * 100);
+  const positive = score >= 0;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-zinc-400 w-20 shrink-0">{label}</span>
+      <div className="flex-1 h-3 bg-zinc-900 rounded-sm overflow-hidden relative">
+        <div
+          className={`h-full rounded-sm ${positive ? 'bg-emerald-500/60' : 'bg-red-500/60'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={`text-[10px] font-mono w-10 text-right ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
+        {score >= 0 ? '+' : ''}{score.toFixed(1)}
+      </span>
+      <span className="text-[10px] font-mono text-zinc-600 w-8 text-right">
+        ×{(weight * 100).toFixed(0)}%
+      </span>
+      <span className={`text-[10px] font-mono w-12 text-right ${contrib >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+        = {contrib >= 0 ? '+' : ''}{contrib.toFixed(2)}
+      </span>
     </div>
   );
 }
