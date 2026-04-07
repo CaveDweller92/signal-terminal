@@ -16,7 +16,12 @@
       "Bash(pip install:*)",
       "Bash(npm --version)",
       "Bash(npm install:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(xargs grep:*)",
+      "WebSearch",
+      "WebFetch",
+      "Bash(npx vitest:*)",
+      "Bash(grep -E '\\\\.py$')"
     ]
   }
 }

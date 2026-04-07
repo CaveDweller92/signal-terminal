@@ -8,15 +8,15 @@
 ## What This Is
 
 A self-adapting swing trading signals platform. The user executes trades manually on Wealthsimple; Signal Terminal provides the intelligence layer:
-- Daily watchlist (Claude-curated, 12 picks from ~4,600 stocks)
+- Daily watchlist (Claude-curated, 20 picks from ~4,700 stocks)
 - Daily BUY/SELL signals with conviction scores (based on daily bars)
-- EXIT alerts on open positions (stop loss, profit target, indicator reversal, sentiment shift)
+- EXIT alerts on open positions (stop loss, trailing stop, profit target, indicator reversal, sentiment shift)
 - Self-tuning via 3-layer adaptive system (Bayesian optimizer + regime detection + Claude meta-review)
 - Positions held for days to weeks (swing trading)
 
 **Disclaimer:** Educational/informational only. Not financial advice.
 
-Full spec: `SIGNAL-TERMINAL-ADAPTIVE.md`
+Original spec (archived, may be outdated): `SIGNAL-TERMINAL-SPEC-ORIGINAL.md`
 
 ---
 
@@ -27,13 +27,13 @@ Full spec: `SIGNAL-TERMINAL-ADAPTIVE.md`
 | Frontend | React 18, TypeScript, Vite, Recharts, Tailwind CSS |
 | Backend | Python 3.11+, FastAPI, Uvicorn |
 | ML/Stats | scikit-learn, scipy, numpy, pandas, hmmlearn |
-| AI Agent | Anthropic Claude API (`claude-sonnet-4-5-20251001` or latest Sonnet) |
+| AI Agent | Anthropic Claude API (`claude-sonnet-4-6` or latest Sonnet) |
 | Database | PostgreSQL 16 + SQLAlchemy (async) + Alembic |
 | Cache | Redis |
 | Task Queue | Celery + Redis (beat scheduler) |
 | WebSocket | FastAPI WebSocket |
 | Notifications | Resend (email), Web Push API |
-| Market Data | Massive.com (US) + yfinance (TSX) + Finnhub news (simulated in Phase 1) |
+| Market Data | Massive.com (US OHLCV + news sentiment) + yfinance (TSX) + Finnhub (fundamentals + .TO news) |
 | DevOps | Docker Compose, GitHub Actions |
 
 ---
@@ -47,10 +47,10 @@ Build one phase at a time. Validate before moving on.
 | 1 | Core Backend — FastAPI skeleton, DB models, signal engine, simulated data provider | `DONE` | Ports: PostgreSQL 5555, Redis 6380 |
 | 2 | Frontend Shell — React app, layout, Watchlist sidebar, Detail panel, wired to Phase 1 | `DONE` | Node 20+ required, WebSocket live signal feed still polling |
 | 3 | Stock Discovery — Universe mgmt, pre-market screener, Claude AI watchlist builder | `DONE` | Needs ANTHROPIC_API_KEY for AI picks, fallback works without |
-| 4 | Position Management — Open/close trades, exit strategy engine (5 strategies), WebSocket alerts | `DONE` | 5 exit strategies + WebSocket broadcast + full frontend UI |
+| 4 | Position Management — Open/close trades, exit strategy engine (6 strategies), WebSocket alerts | `DONE` | 6 exit strategies (incl. trailing stop) + WebSocket broadcast + full frontend UI |
 | 5 | Adaptation — Layer 1 Bayesian optimizer, Layer 2 HMM regime detector, Layer 3 Claude meta-review | `DONE` | 3-layer system, 20 tests |
 | 6 | Production Hardening — Notifications, Docker Compose, CI, tests, cold-start scripts | `DONE` | Celery beat, Resend email, GH Actions |
-| 7 | Adaptation & Performance UI — REST endpoints + frontend panels for parameter drift, meta-review, equity curve | `TODO` | Backend models exist; need API routes + frontend components |
+| 7 | Adaptation & Performance UI — REST endpoints + frontend panels for parameter drift, meta-review, equity curve | `DONE` | Insights tab with Performance + Adaptation panels |
 
 Update the `Status` column as phases complete: `TODO` → `IN PROGRESS` → `DONE`.
 
@@ -61,24 +61,30 @@ Update the `Status` column as phases complete: `TODO` → `IN PROGRESS` → `DON
 ```
 signal-terminal/
 ├── CLAUDE.md                    ← you are here
-├── SIGNAL-TERMINAL-ADAPTIVE.md  ← full spec
+├── SIGNAL-TERMINAL-SPEC-ORIGINAL.md  ← original spec (archived)
 ├── docker-compose.yml
 ├── .env.example
 ├── .gitignore
 ├── Makefile
 ├── frontend/                    ← React + TypeScript
 │   └── src/
-│       ├── types/               ← market.ts, positions.ts, discovery.ts
+│       ├── types/               ← market.ts, positions.ts, discovery.ts, adaptation.ts
 │       ├── services/            ← api.ts, websocket.ts
 │       ├── hooks/               ← useSignals, useRegime, usePositions, useWebSocket
+│       ├── test/                ← setup.ts (Vitest + testing-library)
 │       └── components/
 │           ├── layout/          ← Header, Watchlist, DetailPanel
 │           ├── common/          ← SignalBadge, RegimeBadge, StatBox, PnlBadge
 │           ├── positions/       ← PositionsPanel, PositionList, TradeEntryForm,
-│           │                      ClosePositionModal, PositionRow, TradeHistory
+│           │                      ClosePositionModal, EditPositionModal,
+│           │                      PositionRow, TradeHistory
 │           ├── alerts/          ← AlertFeed, AlertItem
-│           └── discovery/       ← DiscoveryPanel, ScreenerTable, WatchlistGrid,
-│                                   WatchlistCard, ScoreBar
+│           ├── discovery/       ← DiscoveryPanel, ScreenerTable, WatchlistGrid,
+│           │                       WatchlistCard, ScoreBar
+│           └── insights/        ← InsightsPanel, AdaptationPanel, PerformancePanel,
+│                                   CurrentParameters, MetaReviewCard,
+│                                   ParameterDriftChart, EquityCurve,
+│                                   DailyPerfTable, PerformanceSummaryStats
 └── backend/
     ├── alembic.ini
     ├── requirements.txt
@@ -96,21 +102,29 @@ signal-terminal/
         ├── api/                 ← FastAPI route handlers
         │   ├── signals.py, regime.py, discovery.py
         │   └── positions.py, websocket.py
-        ├── engine/              ← Signal engine
-        │   ├── indicators.py    ← EMA, RSI, MACD, ATR, volume ratio
-        │   ├── analyzer.py      ← Conviction scoring → BUY/SELL/HOLD
-        │   ├── data_provider.py ← Simulated + real (strategy pattern)
-        │   ├── regime.py        ← Heuristic regime detector
-        │   ├── sentiment.py     ← Simulated sentiment
-        │   ├── fundamentals.py  ← Simulated fundamentals
-        │   └── live_scanner.py  ← Background loop: position checks (30s) + signal scans (5min)
+        ├── engine/              ← Signal engine + data providers
+        │   ├── indicators.py    ← EMA, RSI, MACD, ATR, Bollinger, Stochastic, ADX, divergence
+        │   ├── analyzer.py      ← Conviction scoring → BUY/SELL/HOLD (R:R filter, weekly trend)
+        │   ├── signal_service.py ← Signal persistence + dedup (one per symbol/day)
+        │   ├── data_provider.py ← DataProvider ABC (strategy pattern)
+        │   ├── hybrid_provider.py ← Routes US→Massive, .TO→yfinance
+        │   ├── massive_provider.py ← Massive.com OHLCV data (US stocks)
+        │   ├── yfinance_provider.py ← Yahoo Finance data (TSX .TO stocks)
+        │   ├── finnhub_provider.py ← Finnhub candle data (legacy)
+        │   ├── massive_sentiment.py ← Massive news API + built-in sentiment (US)
+        │   ├── sentiment_analyzer.py ← Finnhub news + Claude Haiku scoring (.TO)
+        │   ├── fundamental_analyzer.py ← Finnhub P/E, ROE, margins, analyst recs
+        │   ├── regime.py        ← Heuristic regime detector (SPY-based)
+        │   ├── sentiment.py     ← (legacy) Simulated sentiment — unused
+        │   ├── fundamentals.py  ← (legacy) Simulated fundamentals — unused
+        │   └── live_scanner.py  ← Background loop: position checks (30min) + signal scans (60min)
         ├── discovery/           ← Stock discovery
-        │   ├── universe.py      ← Seed + query ~830 stocks
-        │   ├── screener.py      ← 6-dimension pre-market screener
-        │   └── ai_watchlist.py  ← Claude picks 12 from top 30
+        │   ├── universe.py      ← Seed ~4,700 stocks (Finnhub US + Wikipedia TSX 60)
+        │   ├── screener.py      ← 6-dimension pre-market screener (7 indicators)
+        │   └── ai_watchlist.py  ← Claude picks 20 from top 30
         ├── positions/           ← Position manager + exit strategies
         │   ├── manager.py, monitor.py
-        │   └── exit_strategies/ ← base, stop_loss, profit_target,
+        │   └── exit_strategies/ ← base, stop_loss, trailing_stop, profit_target,
         │                           indicator_reversal, sentiment_shift,
         │                           time_based, composite
         ├── adaptation/          ← Layer 1/2/3 adaptive system
@@ -152,11 +166,19 @@ signal-terminal/
 
 ### Testing
 - **Unit tests required** for all critical logic before moving to next phase
-- Tests live in `backend/tests/` — one file per module (e.g., `test_indicators.py`)
-- Use `pytest` + `pytest-asyncio` for async tests
-- Critical = anything that produces numbers users act on: indicators, analyzer, exit strategies, P&L calculations, position manager
+- Backend tests: `backend/tests/` — 7 files, 121 tests (`pytest` + `pytest-asyncio`)
+- Frontend tests: `frontend/src/` — 3 files, 30 tests (`vitest` + `@testing-library/react`)
+- Critical = anything that produces numbers users act on: indicators, analyzer, exit strategies, P&L calculations, position manager, sentiment scoring
 - Mock external dependencies (DB, APIs) — test pure logic
-- Run with `cd backend && pytest tests/ -v`
+- Run backend: `cd backend && pytest tests/ -v`
+- Run frontend: `cd frontend && npm test`
+
+### Market Data Routing
+| Data | US Stocks | .TO Stocks |
+|---|---|---|
+| OHLCV (daily + intraday) | Massive.com (unlimited) | yfinance (free) |
+| News sentiment | Massive `/v2/reference/news` (built-in insights) | Finnhub `/company-news` + Claude Haiku |
+| Fundamentals (P/E, ROE) | Finnhub `/stock/metric` + `/stock/recommendation` | Finnhub (same) |
 
 ### General
 - No direct brokerage integration — user logs trades manually
@@ -168,13 +190,15 @@ signal-terminal/
 
 ```env
 DATABASE_URL=postgresql+asyncpg://signal:signal@localhost:5555/signal_terminal
+DATABASE_URL_SYNC=postgresql://signal:signal@localhost:5555/signal_terminal
 REDIS_URL=redis://localhost:6380/0
-ANTHROPIC_API_KEY=         # Required for Phase 3+ (Claude watchlist + meta-review)
-MASSIVE_API_KEY=           # Required for real US market data
-FINNHUB_API_KEY=           # Required for news sentiment
+ANTHROPIC_API_KEY=         # Required for Claude watchlist + meta-review + .TO sentiment
+MASSIVE_API_KEY=           # Required for US market data + news sentiment
+FINNHUB_API_KEY=           # Required for fundamentals + .TO news sentiment
 TIMEZONE=America/New_York
+TRADING_MODE=swing         # "swing" or "day"
 SCREENER_UNIVERSES=sp500,nasdaq100,tsx
-WATCHLIST_SIZE=12
+WATCHLIST_SIZE=20
 DEFAULT_STOP_LOSS_PCT=5.0
 DEFAULT_PROFIT_TARGET_PCT=10.0
 DEFAULT_ATR_MULTIPLIER_STOP=2.5
@@ -194,7 +218,7 @@ MAX_HOLD_DAYS=25
 4:15 PM   Afternoon position check
 5:00 PM   Post-close screener (finalized daily bars)
 5:00 PM   Regime detection (daily)
-5:30 PM   Claude builds watchlist (12 picks) + email
+5:30 PM   Claude builds watchlist (20 picks) + email
 5:45 PM   Claude daily meta-review + email
 6:00 PM   Performance calculation
 ```
@@ -223,7 +247,7 @@ MAX_HOLD_DAYS=25
 
 **Phase 4 — DONE:**
 - [x] Trade entry form opens a position (TradeEntryForm → POST /api/positions)
-- [x] Position monitor fires exit alerts (5 strategies: stop/target/reversal/sentiment/EOD)
+- [x] Position monitor fires exit alerts (6 strategies: stop/trailing/target/reversal/sentiment/time)
 - [x] Alerts appear in WebSocket feed in UI (AlertFeed + useWebSocket, auto-switches tab on CRITICAL)
 - [x] Closing a position records outcome (ClosePositionModal → PUT /api/positions/{id}/close)
 
@@ -236,7 +260,7 @@ MAX_HOLD_DAYS=25
 - [x] Celery beat schedule runs full daily pipeline
 - [x] Resend email notifications (watchlist, meta-review, critical alerts)
 - [x] Docker Compose with all services (db, redis, backend, frontend, celery worker + beat)
-- [x] 1,359 lines of tests across 6 files (indicators, analyzer, exit strategies, position manager, adaptation)
+- [x] 151 tests across 10 files (backend: indicators, analyzer, exit strategies, position manager, adaptation, signal quality; frontend: api, PnlBadge, SignalBadge)
 - [x] Cold-start scripts (`seed_universe.py`, `seed_historical.py`)
 
 **Phase 7 — DONE:**
@@ -258,11 +282,9 @@ MAX_HOLD_DAYS=25
 
 | Item | Notes |
 |---|---|
-| Real market data | Massive.com (US) + yfinance (TSX) + Finnhub news + Claude sentiment — fully wired, requires API keys |
 | Symbol validation in trade form | TradeEntryForm doesn't verify symbol exists in universe before submitting |
-| Adaptation/Performance UI | Done — Insights tab with Performance (equity curve, daily table) + Adaptation (parameter drift, meta-reviews) |
-| WebSocket signal feed | live_scanner.py broadcasts every 5 min during market hours |
-| Real sentiment/fundamentals | Both return simulated data; real API integration deferred |
+| Massive financials for US | Currently only Finnhub for fundamentals; Massive may have financials endpoint on higher plan |
+| Frontend tests | 30 tests (API service, PnlBadge, SignalBadge); no component integration tests yet |
 
 ---
 
