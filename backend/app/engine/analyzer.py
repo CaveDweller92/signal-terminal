@@ -53,8 +53,10 @@ class AnalyzerConfig:
         self.min_signal_strength: float = 1.5  # swing signals develop gradually
 
         # Composite weights (must sum to 1.0)
-        self.technical_weight: float = 0.5
-        self.sentiment_weight: float = 0.3
+        # Sentiment reduced from 0.3 -> 0.2 based on Tetlock (2007) — positive
+        # news is largely priced in; technicals dominate swing trading edge.
+        self.technical_weight: float = 0.6
+        self.sentiment_weight: float = 0.2
         self.fundamental_weight: float = 0.2
 
         # Exit levels
@@ -217,6 +219,18 @@ class SignalAnalyzer:
         else:
             sentiment_score = 0.0
             sentiment_reasons = ["No sentiment provider configured"]
+
+        # Asymmetric sentiment scoring (Tetlock 2007):
+        #   - Negative sentiment is 2-3x more informative than positive
+        #   - Extreme positive sentiment (>2.5) is often contrarian (priced in)
+        if sentiment_score < 0:
+            sentiment_score *= 1.5
+            sentiment_reasons.append("Negative sentiment amplified (1.5x)")
+        elif sentiment_score > 2.5:
+            sentiment_score *= 0.7
+            sentiment_reasons.append("Extreme positive sentiment discounted (0.7x — contrarian)")
+        # Re-clamp to -3..+3 range after asymmetric adjustment
+        sentiment_score = max(-3.0, min(3.0, sentiment_score))
         if self._fundamentals is not None:
             fundamental_data = await self._fundamentals.get_fundamentals(symbol)
             fundamental_score = fundamental_data["score"]
