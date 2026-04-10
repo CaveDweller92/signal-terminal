@@ -197,7 +197,7 @@ class SignalAnalyzer:
         # --- Minervini-relaxed trend template (long candidates only) ---
         # Stricter than the 200-day SMA filter alone. Stocks failing this are
         # structurally weak. Only checks LONG eligibility — SELL is unaffected.
-        passes_trend_template = self._check_trend_template(closes, current_price)
+        passes_trend_template = bool(self._check_trend_template(closes, float(current_price)))
 
         # --- Score technical signals (range: -5 to +5) ---
         tech_score, tech_reasons = self._score_technical(
@@ -608,13 +608,14 @@ class SignalAnalyzer:
 
         adjusted_shares = base_shares * conviction_multiplier
 
-        # Cap at max position size
-        max_shares = max_position_value / entry_price
-        capped = adjusted_shares > max_shares
+        # Cap at max position size — cast everything to native Python types
+        # to avoid numpy.bool/numpy.float in JSON-serialized output.
+        max_shares = float(max_position_value) / float(entry_price)
+        capped = bool(adjusted_shares > max_shares)
         final_shares = int(min(adjusted_shares, max_shares))
 
-        position_value = final_shares * entry_price
-        actual_risk = final_shares * per_share_risk
+        position_value = float(final_shares) * float(entry_price)
+        actual_risk = float(final_shares) * float(per_share_risk)
 
         return {
             "shares": final_shares,
