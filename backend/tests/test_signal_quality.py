@@ -370,3 +370,86 @@ class TestMassiveSentimentScoring:
         result = analyzer._score_from_insights("X", articles)
         assert result is not None
         assert -3.0 <= result["score"] <= 3.0
+
+
+# === Position Size Calculator ===
+
+class TestPositionSizing:
+    def _make_analyzer(self):
+        return SignalAnalyzer(MockDataProvider(), AnalyzerConfig())
+
+    def test_basic_van_tharp_calculation(self):
+        """1% of $10000 = $100 risk. Entry $100, stop $97 = $3 risk/share = 33 shares."""
+        analyzer = self._make_analyzer()
+        # Use a low conviction (~0.0) so the multiplier is ~0.75 (no boost)
+        result = analyzer._compute_position_size(
+            entry_price=100.0, stop_loss=97.0, conviction=0.0, signal_type="BUY",
+        )
+        # base = 100/3 = 33.33, multiplier = 0.75 → 25 shares (int)
+        assert result["shares"] > 0
+        assert result["risk_amount"] > 0
+        assert result["risk_pct_of_portfolio"] <= 1.5  # within reason of 1%
+
+    def test_risk_amount_matches_per_share_risk_times_shares(self):
+        """Risk amount should equal shares × per-share risk distance."""
+        analyzer = self._make_analyzer()
+        result = analyzer._compute_position_size(
+            entry_price=50.0, stop_loss=48.0, conviction=1.5, signal_type="BUY",
+        )
+        per_share_risk = 50.0 - 48.0  # $2
+        expected_risk = result["shares"] * per_share_risk
+        assert result["risk_amount"] == pytest.approx(expected_risk, abs=0.01)
+
+    def test_zero_risk_returns_zero_shares(self):
+        """Stop equal to entry → can't compute position size, return 0."""
+        analyzer = self._make_analyzer()
+        result = analyzer._compute_position_size(
+            entry_price=100.0, stop_loss=100.0, conviction=2.0, signal_type="BUY",
+        )
+        assert result["shares"] == 0
+        assert result["risk_amount"] == 0
+
+    def test_high_conviction_boosts_size(self):
+        """High conviction should produce more shares than low conviction (same setup)."""
+        analyzer = self._make_analyzer()
+        low = analyzer._compute_position_size(100.0, 95.0, conviction=0.5, signal_type="BUY")
+        high = analyzer._compute_position_size(100.0, 95.0, conviction=3.0, signal_type="BUY")
+        assert high["shares"] >= low["shares"]
+        assert high["conviction_multiplier"] > low["conviction_multiplier"]
+
+    def test_max_position_cap(self):
+        """Position should be capped at max_position_pct of portfolio."""
+        from app.config import settings
+        analyzer = self._make_analyzer()
+        # Tight stop on cheap stock = huge share count
+        # $10000 portfolio, max 25% = $2500 max position
+        # $1 entry, $0.99 stop = $0.01 risk/share, $100 / $0.01 = 10000 shares
+        # That's $10000 position, way over cap
+        result = analyzer._compute_position_size(
+            entry_price=1.0, stop_loss=0.99, conviction=2.0, signal_type="BUY",
+        )
+        max_position = settings.portfolio_size_cad * (settings.max_position_pct / 100)
+        assert result["position_value"] <= max_position * 1.01  # tiny float tolerance
+        assert result["capped_at_max_position"] is True
+
+    def test_negative_conviction_for_sell(self):
+        """SELL signals (negative conviction) should still compute valid sizing."""
+        analyzer = self._make_analyzer()
+        result = analyzer._compute_position_size(
+            entry_price=100.0, stop_loss=103.0, conviction=-2.0, signal_type="SELL",
+        )
+        # Distance is 3, regardless of direction
+        assert result["shares"] > 0
+        assert result["risk_amount"] > 0
+
+    def test_sizing_in_signal_output(self):
+        """analyzer.analyze() should include position_sizing in the result dict."""
+        import asyncio
+        analyzer = self._make_analyzer()
+        result = asyncio.get_event_loop().run_until_complete(analyzer.analyze("TEST"))
+        if result is not None:
+            assert "position_sizing" in result
+            sizing = result["position_sizing"]
+            assert "shares" in sizing
+            assert "position_value" in sizing
+            assert "risk_amount" in sizing

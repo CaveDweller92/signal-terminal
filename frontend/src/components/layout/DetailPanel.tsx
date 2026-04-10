@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Signal } from '../../types/market';
+import type { Signal, PositionSizing } from '../../types/market';
 import { SignalBadge } from '../common/SignalBadge';
 import { StatBox } from '../common/StatBox';
 
@@ -43,6 +43,11 @@ export function DetailPanel({ signal }: DetailPanelProps) {
 
         {/* Conviction breakdown */}
         <ConvictionBreakdown signal={signal} />
+
+        {/* Position sizing — only when actionable */}
+        {signal.position_sizing && signal.signal_type === 'BUY' && signal.position_sizing.shares > 0 && (
+          <PositionSizingBox sizing={signal.position_sizing} />
+        )}
 
         {/* Quick stats row */}
         <div className="grid grid-cols-3 gap-2 mt-2">
@@ -89,6 +94,48 @@ export function DetailPanel({ signal }: DetailPanelProps) {
         {activeTab === 'sentiment' && <SentimentContent signal={signal} />}
         {activeTab === 'fundamental' && <FundamentalContent signal={signal} />}
       </div>
+    </div>
+  );
+}
+
+function PositionSizingBox({ sizing }: { sizing: PositionSizing }) {
+  return (
+    <div className="bg-blue-950/30 border border-blue-800/40 rounded-lg px-4 py-3 mt-2">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] uppercase tracking-wider text-blue-400 font-semibold">
+          Position Size (Van Tharp 1% Risk)
+        </span>
+        {sizing.capped_at_max_position && (
+          <span className="text-[9px] text-amber-400 font-mono">CAPPED AT MAX</span>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-zinc-500">Shares</div>
+          <div className="text-base font-mono font-bold text-zinc-100">{sizing.shares}</div>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-zinc-500">Position Value</div>
+          <div className="text-base font-mono font-bold text-zinc-100">
+            ${sizing.position_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-zinc-500">Risk Amount</div>
+          <div className="text-base font-mono font-bold text-red-400">
+            ${sizing.risk_amount.toFixed(2)}
+            <span className="text-[10px] font-normal text-zinc-500 ml-1">
+              ({sizing.risk_pct_of_portfolio.toFixed(2)}%)
+            </span>
+          </div>
+        </div>
+      </div>
+      {sizing.conviction_multiplier !== 1.0 && (
+        <div className="mt-2 pt-2 border-t border-blue-800/30 text-[10px] font-mono text-zinc-500">
+          Conviction overlay: {sizing.conviction_multiplier > 1 ? '+' : ''}
+          {((sizing.conviction_multiplier - 1) * 100).toFixed(0)}%
+        </div>
+      )}
     </div>
   );
 }

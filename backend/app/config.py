@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     eod_exit_enabled: bool = False
     max_hold_days: int = 25  # trading days (~5 weeks)
 
+    # Position Sizing (Van Tharp / Turtle Traders)
+    portfolio_size_cad: float = 10000.0
+    risk_per_trade_pct: float = 1.0  # % of portfolio risked per trade
+    max_position_pct: float = 25.0   # max % of portfolio in any single position
+
     # Server
     cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"])
 

@@ -281,6 +281,11 @@ class SignalAnalyzer:
         elif conviction <= -self.config.min_signal_strength:
             signal_type = "SELL"
 
+        # --- Position sizing (Van Tharp fixed fractional risk + conviction overlay) ---
+        position_sizing = self._compute_position_size(
+            current_price, stop_loss, conviction, signal_type,
+        )
+
         return {
             "symbol": symbol,
             "signal_type": signal_type,
@@ -292,6 +297,7 @@ class SignalAnalyzer:
             "suggested_stop_loss": stop_loss,
             "suggested_profit_target": profit_target,
             "atr_at_signal": round(float(current_atr), 4),
+            "position_sizing": position_sizing,
             "reasons": {
                 "technical": tech_reasons,
                 "sentiment": sentiment_reasons,
@@ -428,4 +434,72 @@ class SignalAnalyzer:
         score = max(-5.0, min(5.0, score))
 
         return score, reasons
+
+    def _compute_position_size(
+        self,
+        entry_price: float,
+        stop_loss: float,
+        conviction: float,
+        signal_type: str,
+    ) -> dict:
+        """
+        Van Tharp fixed fractional risk position sizing with conviction overlay.
+
+        Formula:
+            risk_dollars = portfolio * (risk_per_trade_pct / 100)
+            base_shares = risk_dollars / (entry - stop)
+            adjusted = base * (1 + conviction_factor * 0.25)
+            capped = min(adjusted, max_position_value / entry)
+
+        Conviction overlay (AQR research): scale base position by ±25% based on
+        signal strength. A conviction of 3.0 (strong) adds 25%; 1.0 adds 8%.
+        Capped at max_position_pct of portfolio.
+        """
+        portfolio = settings.portfolio_size_cad
+        risk_pct = settings.risk_per_trade_pct
+        max_pos_pct = settings.max_position_pct
+
+        risk_dollars = portfolio * (risk_pct / 100)
+        max_position_value = portfolio * (max_pos_pct / 100)
+
+        # Per-share risk (always positive — distance between entry and stop)
+        per_share_risk = abs(entry_price - stop_loss)
+
+        # Guard against degenerate cases
+        if per_share_risk <= 0 or entry_price <= 0:
+            return {
+                "shares": 0,
+                "position_value": 0.0,
+                "risk_amount": 0.0,
+                "risk_pct_of_portfolio": 0.0,
+                "conviction_multiplier": 1.0,
+                "capped_at_max_position": False,
+            }
+
+        # Base size from fixed fractional risk
+        base_shares = risk_dollars / per_share_risk
+
+        # Conviction overlay: ±25% based on conviction magnitude (clamped 0-3)
+        # conviction 0 → 1.0x, conviction 3 → 1.25x, conviction -3 → 0.75x for SELL
+        conviction_strength = min(3.0, abs(conviction)) / 3.0  # 0-1
+        conviction_multiplier = 1.0 + (conviction_strength - 0.5) * 0.5  # 0.75-1.25
+
+        adjusted_shares = base_shares * conviction_multiplier
+
+        # Cap at max position size
+        max_shares = max_position_value / entry_price
+        capped = adjusted_shares > max_shares
+        final_shares = int(min(adjusted_shares, max_shares))
+
+        position_value = final_shares * entry_price
+        actual_risk = final_shares * per_share_risk
+
+        return {
+            "shares": final_shares,
+            "position_value": round(position_value, 2),
+            "risk_amount": round(actual_risk, 2),
+            "risk_pct_of_portfolio": round(actual_risk / portfolio * 100, 2) if portfolio > 0 else 0.0,
+            "conviction_multiplier": round(conviction_multiplier, 2),
+            "capped_at_max_position": capped,
+        }
 

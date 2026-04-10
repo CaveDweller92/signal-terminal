@@ -27,6 +27,15 @@ export interface SignalReasons {
   fundamental: string[];
 }
 
+export interface PositionSizing {
+  shares: number;
+  position_value: number;
+  risk_amount: number;
+  risk_pct_of_portfolio: number;
+  conviction_multiplier: number;
+  capped_at_max_position: boolean;
+}
+
 export interface Signal {
   id?: number;
   symbol: string;
@@ -42,6 +51,7 @@ export interface Signal {
   regime_at_signal?: string;
   reasons: SignalReasons;
   indicators: Indicators;
+  position_sizing?: PositionSizing;
 }
 
 export interface SignalListResponse {
