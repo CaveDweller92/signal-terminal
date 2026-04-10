@@ -264,6 +264,16 @@ class SignalAnalyzer:
         if profit_target <= current_price:
             profit_target = pct_target
 
+        # Hard caps — prevent absurd targets/stops on high-volatility stocks.
+        # ATR-based multipliers can produce 30%+ targets on volatile micro-caps;
+        # cap at sensible swing-trading bounds.
+        max_stop = round(current_price * (1 - settings.max_stop_loss_pct / 100), 2)
+        max_target = round(current_price * (1 + settings.max_profit_target_pct / 100), 2)
+        if stop_loss < max_stop:
+            stop_loss = max_stop
+        if profit_target > max_target:
+            profit_target = max_target
+
         # --- Determine signal type with risk/reward filter ---
         signal_type = "HOLD"
         if conviction >= self.config.min_signal_strength:

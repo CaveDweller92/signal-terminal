@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.engine.data_provider import DataProvider
 from app.engine.regime import RegimeDetector
+from app.models.parameter_snapshot import ParameterSnapshot
 from app.models.position import Position
 from app.models.signal import Signal
 
@@ -27,16 +28,72 @@ class PositionManager:
         self.db = db
         self.data = data_provider
 
+    async def _get_active_multipliers(self) -> tuple[float, float]:
+        """
+        Single source of truth for ATR multipliers — pulls from the latest
+        ParameterSnapshot (which is fed by regime presets + optimizer).
+        Falls back to .env defaults if no snapshot exists yet.
+        """
+        try:
+            result = await self.db.execute(
+                select(ParameterSnapshot)
+                .order_by(ParameterSnapshot.created_at.desc())
+                .limit(1)
+            )
+            snapshot = result.scalar_one_or_none()
+            if snapshot and getattr(snapshot, "full_config", None):
+                cfg = snapshot.full_config
+                return (
+                    float(cfg.get("atr_stop_multiplier", settings.default_atr_multiplier_stop)),
+                    float(cfg.get("atr_target_multiplier", settings.default_atr_multiplier_target)),
+                )
+        except Exception:
+            pass
+        return (
+            settings.default_atr_multiplier_stop,
+            settings.default_atr_multiplier_target,
+        )
+
+    def _apply_exit_caps(
+        self, entry_price: float, stop: float, target: float, is_long: bool
+    ) -> tuple[float, float]:
+        """Apply hard caps so volatile stocks can't get absurd exit levels."""
+        max_stop_pct = settings.max_stop_loss_pct / 100
+        max_target_pct = settings.max_profit_target_pct / 100
+
+        if is_long:
+            min_stop = entry_price * (1 - max_stop_pct)
+            max_target = entry_price * (1 + max_target_pct)
+            if stop < min_stop:
+                stop = min_stop
+            if target > max_target:
+                target = max_target
+        else:
+            max_stop = entry_price * (1 + max_stop_pct)
+            min_target = entry_price * (1 - max_target_pct)
+            if stop > max_stop:
+                stop = max_stop
+            if target < min_target:
+                target = min_target
+
+        return round(stop, 2), round(target, 2)
+
     async def open_position(self, trade_input: dict) -> Position:
         """
         Open a new position from user input.
 
         Required: symbol, direction (LONG/SHORT), entry_price, quantity
         Optional: stop_loss_price, profit_target_price, custom overrides
+
+        Exit level priority:
+          1. User-provided stop/target (highest priority)
+          2. Linked signal's stored stop/target (so position matches what user clicked)
+          3. ATR × active regime multipliers (with hard caps applied)
         """
         symbol = trade_input["symbol"]
         entry_price = trade_input["entry_price"]
         direction = trade_input["direction"]
+        is_long = direction == "LONG"
 
         # Get current ATR from daily bars — matches SignalAnalyzer
         daily = await self.data.get_daily(symbol)
@@ -53,23 +110,17 @@ class PositionManager:
         regime_result = await detector.detect()
         regime = regime_result["regime"]
 
-        # Compute default exit levels
-        stop_mult = trade_input.get("atr_stop_multiplier", settings.default_atr_multiplier_stop)
-        target_mult = trade_input.get("atr_target_multiplier", settings.default_atr_multiplier_target)
-
-        if direction == "LONG":
-            default_stop = entry_price - atr * stop_mult
-            default_target = entry_price + atr * target_mult
-        else:
-            default_stop = entry_price + atr * stop_mult
-            default_target = entry_price - atr * target_mult
+        # Pull multipliers from the SAME source the analyzer uses
+        active_stop_mult, active_target_mult = await self._get_active_multipliers()
+        stop_mult = trade_input.get("atr_stop_multiplier", active_stop_mult)
+        target_mult = trade_input.get("atr_target_multiplier", active_target_mult)
 
         # Auto-link to today's signal for this symbol (if not manually provided)
         entry_signal_id = trade_input.get("entry_signal_id")
         if not entry_signal_id:
             from datetime import date
             today = date.today()
-            expected_type = "BUY" if direction == "LONG" else "SELL"
+            expected_type = "BUY" if is_long else "SELL"
             sig_result = await self.db.execute(
                 select(Signal.id)
                 .where(Signal.symbol == symbol)
@@ -79,6 +130,31 @@ class PositionManager:
                 .limit(1)
             )
             entry_signal_id = sig_result.scalar_one_or_none()
+
+        # If we have a linked signal, prefer ITS stored stop/target so the
+        # position matches exactly what the user clicked on in the UI.
+        signal_stop = None
+        signal_target = None
+        if entry_signal_id:
+            signal_obj = await self.db.get(Signal, entry_signal_id)
+            if signal_obj:
+                signal_stop = signal_obj.suggested_stop_loss
+                signal_target = signal_obj.suggested_profit_target
+
+        if signal_stop is not None and signal_target is not None:
+            default_stop = signal_stop
+            default_target = signal_target
+        elif is_long:
+            default_stop = entry_price - atr * stop_mult
+            default_target = entry_price + atr * target_mult
+        else:
+            default_stop = entry_price + atr * stop_mult
+            default_target = entry_price - atr * target_mult
+
+        # Apply hard caps to whatever we computed
+        default_stop, default_target = self._apply_exit_caps(
+            entry_price, default_stop, default_target, is_long,
+        )
 
         position = Position(
             symbol=symbol,
@@ -204,13 +280,17 @@ class PositionManager:
             entry = position.entry_price
             stop_mult = position.atr_stop_multiplier or settings.default_atr_multiplier_stop
             target_mult = position.atr_target_multiplier or settings.default_atr_multiplier_target
+            is_long = position.direction == "LONG"
 
-            if position.direction == "LONG":
-                new_sl = round(entry - atr * stop_mult, 2)
-                new_pt = round(entry + atr * target_mult, 2)
+            if is_long:
+                new_sl = entry - atr * stop_mult
+                new_pt = entry + atr * target_mult
             else:
-                new_sl = round(entry + atr * stop_mult, 2)
-                new_pt = round(entry - atr * target_mult, 2)
+                new_sl = entry + atr * stop_mult
+                new_pt = entry - atr * target_mult
+
+            # Apply hard caps so volatile stocks can't get absurd levels
+            new_sl, new_pt = self._apply_exit_caps(entry, new_sl, new_pt, is_long)
 
             if not user_set_sl:
                 position.stop_loss_price = new_sl

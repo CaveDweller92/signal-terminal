@@ -18,8 +18,12 @@ def make_mock_db():
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.refresh = AsyncMock()
-    db.get = AsyncMock()
-    db.execute = AsyncMock()
+    # db.get returns None by default — no linked signal, no parameter snapshot
+    db.get = AsyncMock(return_value=None)
+    # db.execute returns a mock whose scalar_one_or_none() also returns None
+    exec_result = MagicMock()
+    exec_result.scalar_one_or_none = MagicMock(return_value=None)
+    db.execute = AsyncMock(return_value=exec_result)
     return db
 
 

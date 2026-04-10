@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     eod_exit_enabled: bool = False
     max_hold_days: int = 25  # trading days (~5 weeks)
 
+    # Hard caps on ATR-derived exit levels (prevents absurd targets on
+    # high-volatility stocks). A stock with 8% ATR × 4.0 multiplier = 32%
+    # target which is unrealistic for swing trading.
+    max_stop_loss_pct: float = 12.0   # never risk more than 12% on a swing
+    max_profit_target_pct: float = 25.0  # never target more than 25% gain
+
     # Position Sizing (Van Tharp / Turtle Traders)
     portfolio_size_cad: float = 10000.0
     risk_per_trade_pct: float = 1.0  # % of portfolio risked per trade
