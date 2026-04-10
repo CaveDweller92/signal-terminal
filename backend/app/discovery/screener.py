@@ -154,6 +154,7 @@ class PremarketScreener:
                     relative_volume=round(result.get("rel_volume", 1), 2),
                     sector=result["sector_name"],
                     has_catalyst=result.get("has_catalyst", False),
+                    passes_trend_template=result.get("passes_trend_template", False),
                 )
                 # Upsert — safe for concurrent/rerun scans
                 stmt = pg_insert(ScreenerResult).values(**row_data)
@@ -190,7 +191,8 @@ class PremarketScreener:
 
     async def _score_stock(self, stock: StockUniverse, sector_perf: dict[str, float]) -> dict:
         """Score a single stock on 6 dimensions (0-10 scale each) using daily bars."""
-        daily = await self.data.get_daily(stock.symbol)
+        # Fetch 252 days for 52-week high/low and 200-day SMA (Minervini template)
+        daily = await self.data.get_daily(stock.symbol, days=252)
 
         if not daily or len(daily) < 20:
             raise ValueError(f"Insufficient daily data for {stock.symbol}")
@@ -280,6 +282,11 @@ class PremarketScreener:
 
         tech_score = min(10.0, tech_score)
 
+        # Trend template evaluation (Minervini-relaxed) — stocks failing this
+        # are structurally weak and unlikely to be good long candidates.
+        # Boolean flag is consumed by analyzer for BUY signal hard filter.
+        passes_trend_template = self._check_trend_template(daily_closes)
+
         # 4. Fundamental score — stock quality (Sharpe, drawdown, stability)
         fundamental_score = self._calc_fundamental_score(daily_closes)
 
@@ -310,6 +317,7 @@ class PremarketScreener:
             "gap_pct": momentum_5d,  # reuse field for 5-day momentum %
             "rel_volume": current_vol,
             "has_catalyst": has_catalyst,
+            "passes_trend_template": passes_trend_template,
         }
 
     # ------------------------------------------------------------------ #
@@ -374,6 +382,57 @@ class PremarketScreener:
             score += 1.0
 
         return min(10.0, score)
+
+    def _check_trend_template(self, daily_closes: np.ndarray) -> bool:
+        """
+        Minervini-relaxed trend template for swing trading long candidates.
+
+        Stocks failing this check are structurally weak and unlikely to be
+        good long setups. The boolean flows through to the analyzer where
+        it acts as a hard filter on BUY signals.
+
+        Criteria (must ALL pass):
+          1. Price > 50-day SMA (short-term uptrend)
+          2. Price > 150-day SMA (medium-term uptrend)
+          3. 50-day SMA > 150-day SMA (proper MA stacking)
+          4. Price within 25% of 52-week high (not bombed out)
+          5. Price >= 20% above 52-week low (clear distance from bottom)
+
+        Requires at least 200 daily bars. Returns False if insufficient data
+        (conservative — assume failing rather than passing).
+        """
+        if len(daily_closes) < 200:
+            return False
+
+        current_price = float(daily_closes[-1])
+
+        # SMAs
+        sma_50 = float(np.mean(daily_closes[-50:]))
+        sma_150 = float(np.mean(daily_closes[-150:]))
+
+        # 52-week high/low (use 252 days if available, else what we have)
+        lookback = min(252, len(daily_closes))
+        recent = daily_closes[-lookback:]
+        week52_high = float(np.max(recent))
+        week52_low = float(np.min(recent))
+
+        # 1. Above 50-day SMA
+        if current_price <= sma_50:
+            return False
+        # 2. Above 150-day SMA
+        if current_price <= sma_150:
+            return False
+        # 3. 50-day above 150-day (MA stacking)
+        if sma_50 <= sma_150:
+            return False
+        # 4. Within 25% of 52-week high
+        if current_price < week52_high * 0.75:
+            return False
+        # 5. At least 20% above 52-week low
+        if week52_low > 0 and current_price < week52_low * 1.20:
+            return False
+
+        return True
 
     async def _fetch_news_score(self, symbol: str) -> tuple[float, bool]:
         """

@@ -123,8 +123,8 @@ class SignalAnalyzer:
         Uses daily bars for all technical indicators (swing trading).
         Intraday bars are only used as a fallback for current price.
         """
-        # Fetch 220 days so we have enough for 200-day SMA filter
-        daily = await self.data.get_daily(symbol, days=220)
+        # Fetch 252 days for 200-day SMA + 52-week high/low (Minervini template)
+        daily = await self.data.get_daily(symbol, days=252)
 
         if not daily or len(daily) < 20:
             logger.warning(f"Analyzer: insufficient daily data for {symbol} — skipping")
@@ -193,6 +193,11 @@ class SignalAnalyzer:
         # Exception: range-bound markets (mean_reverting regime, ADX < 20).
         sma_200 = float(np.mean(closes[-200:])) if len(closes) >= 200 else None
         below_sma_200 = sma_200 is not None and current_price < sma_200
+
+        # --- Minervini-relaxed trend template (long candidates only) ---
+        # Stricter than the 200-day SMA filter alone. Stocks failing this are
+        # structurally weak. Only checks LONG eligibility — SELL is unaffected.
+        passes_trend_template = self._check_trend_template(closes, current_price)
 
         # --- Score technical signals (range: -5 to +5) ---
         tech_score, tech_reasons = self._score_technical(
@@ -267,6 +272,10 @@ class SignalAnalyzer:
             if below_sma_200 and current_adx >= 20:
                 tech_reasons.append(
                     f"Below 200-day SMA (${sma_200:.2f}) — no BUY in downtrend"
+                )
+            elif not passes_trend_template:
+                tech_reasons.append(
+                    "Fails Minervini trend template — no BUY (structurally weak)"
                 )
             else:
                 # Check risk/reward: potential reward must be >= 1.5× potential risk
@@ -501,6 +510,52 @@ class SignalAnalyzer:
         score = max(-5.0, min(5.0, score))
 
         return score, reasons
+
+    def _check_trend_template(self, closes: np.ndarray, current_price: float) -> bool:
+        """
+        Minervini-relaxed trend template for swing trading long candidates.
+
+        Stocks failing this check are structurally weak and unlikely to be
+        good long setups. Used as a hard filter on BUY signals.
+
+        Criteria (must ALL pass):
+          1. Price > 50-day SMA  (short-term uptrend)
+          2. Price > 150-day SMA (medium-term uptrend)
+          3. 50-day SMA > 150-day SMA (proper MA stacking)
+          4. Price within 25% of 52-week high (not bombed out)
+          5. Price >= 20% above 52-week low (clear distance from bottom)
+
+        Returns True if all criteria pass, False otherwise (fail-closed:
+        insufficient data also returns False).
+        """
+        if len(closes) < 200:
+            return False
+
+        sma_50 = float(np.mean(closes[-50:]))
+        sma_150 = float(np.mean(closes[-150:]))
+
+        lookback = min(252, len(closes))
+        recent = closes[-lookback:]
+        week52_high = float(np.max(recent))
+        week52_low = float(np.min(recent))
+
+        # 1. Above 50-day SMA
+        if current_price <= sma_50:
+            return False
+        # 2. Above 150-day SMA
+        if current_price <= sma_150:
+            return False
+        # 3. 50-day above 150-day (MA stacking)
+        if sma_50 <= sma_150:
+            return False
+        # 4. Within 25% of 52-week high
+        if current_price < week52_high * 0.75:
+            return False
+        # 5. At least 20% above 52-week low
+        if week52_low > 0 and current_price < week52_low * 1.20:
+            return False
+
+        return True
 
     def _compute_position_size(
         self,

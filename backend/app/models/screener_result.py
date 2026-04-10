@@ -30,5 +30,6 @@ class ScreenerResult(Base):
     sector: Mapped[str | None] = mapped_column(String(50), nullable=True)
     has_catalyst: Mapped[bool] = mapped_column(Boolean, default=False)
     catalyst_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    passes_trend_template: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)

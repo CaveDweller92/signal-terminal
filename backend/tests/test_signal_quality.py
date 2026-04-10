@@ -453,3 +453,63 @@ class TestPositionSizing:
             assert "shares" in sizing
             assert "position_value" in sizing
             assert "risk_amount" in sizing
+
+
+# === Minervini Trend Template ===
+
+class TestTrendTemplate:
+    def _make_analyzer(self):
+        return SignalAnalyzer(MockDataProvider(), AnalyzerConfig())
+
+    def test_insufficient_data_returns_false(self):
+        """Fewer than 200 bars → fail closed."""
+        analyzer = self._make_analyzer()
+        closes = np.array([100.0] * 50)
+        assert analyzer._check_trend_template(closes, current_price=100.0) is False
+
+    def test_strong_uptrend_passes(self):
+        """Classic Minervini setup: price above stacked SMAs, near 52w high."""
+        analyzer = self._make_analyzer()
+        # 252 bars trending up from 50 -> 150, current price near top
+        closes = np.linspace(50.0, 150.0, 252)
+        assert analyzer._check_trend_template(closes, current_price=148.0) is True
+
+    def test_downtrend_fails(self):
+        """Downtrending stock should fail."""
+        analyzer = self._make_analyzer()
+        closes = np.linspace(200.0, 100.0, 252)
+        assert analyzer._check_trend_template(closes, current_price=102.0) is False
+
+    def test_below_50_sma_fails(self):
+        """Price below 50-day SMA → fails criterion 1."""
+        analyzer = self._make_analyzer()
+        # Flat 252 bars at 100, but current price below the 50-day mean
+        closes = np.full(252, 100.0)
+        closes[-50:] = 105.0  # 50-day SMA = 105
+        assert analyzer._check_trend_template(closes, current_price=104.0) is False
+
+    def test_far_below_52_week_high_fails(self):
+        """Stock 30% off 52-week high fails criterion 4 (must be within 25%)."""
+        analyzer = self._make_analyzer()
+        closes = np.linspace(50.0, 150.0, 252)
+        closes[-1] = 100.0  # 33% off 150 high
+        # Even though trending up, current price too far from high
+        assert analyzer._check_trend_template(closes, current_price=100.0) is False
+
+    def test_barely_above_52_week_low_fails(self):
+        """Stock only 10% above 52-week low → fails criterion 5 (need 20%)."""
+        analyzer = self._make_analyzer()
+        closes = np.linspace(150.0, 100.0, 252)
+        closes[-1] = 105.0  # just 5% above low of 100
+        assert analyzer._check_trend_template(closes, current_price=105.0) is False
+
+    def test_ma_stacking_failure(self):
+        """50-day below 150-day → fails criterion 3."""
+        analyzer = self._make_analyzer()
+        # Recent decline: first 200 bars rising, last 52 declining
+        closes = np.concatenate([
+            np.linspace(50.0, 150.0, 200),
+            np.linspace(150.0, 130.0, 52),
+        ])
+        # 50-day SMA would be below 150-day SMA
+        assert analyzer._check_trend_template(closes, current_price=130.0) is False
