@@ -46,10 +46,19 @@ class OnlineOptimizer:
     - Learning rate decays over time (explore early, exploit later)
     """
 
-    def __init__(self, learning_rate: float = 0.05, decay: float = 0.995):
+    def __init__(self, learning_rate: float = 0.015, decay: float = 0.995, momentum: float = 0.7):
+        """
+        Args:
+            learning_rate: Base learning rate (default 0.015 — conservative online learning).
+            decay: Per-trade decay multiplier.
+            momentum: EMA momentum for parameter adjustments (0=no momentum, 0.9=heavy smoothing).
+        """
         self.learning_rate = learning_rate
         self.decay = decay
+        self.momentum = momentum
         self._trade_count = 0
+        # Track previous adjustments for momentum smoothing (param_name → last delta)
+        self._prev_adjustments: dict[str, float] = {}
 
     async def update_after_trade(
         self, db: AsyncSession, position: Position
@@ -168,6 +177,19 @@ class OnlineOptimizer:
 
         # Adapt conviction weights based on which component predicted correctly
         adjusted = self._adjust_weights(adjusted, pnl, lr, signal)
+
+        # Apply momentum smoothing — blend new delta with previous delta to
+        # reduce parameter whipsaw from noisy single-trade outcomes.
+        for name, new_value in list(adjusted.items()):
+            if name not in params:
+                continue
+            new_delta = new_value - params[name]
+            if new_delta == 0:
+                continue
+            prev_delta = self._prev_adjustments.get(name, 0.0)
+            smoothed_delta = self.momentum * prev_delta + (1 - self.momentum) * new_delta
+            adjusted[name] = params[name] + smoothed_delta
+            self._prev_adjustments[name] = smoothed_delta
 
         # Clamp and normalize
         adjusted = clamp_params(adjusted)

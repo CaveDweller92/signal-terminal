@@ -121,7 +121,8 @@ class SignalAnalyzer:
         Uses daily bars for all technical indicators (swing trading).
         Intraday bars are only used as a fallback for current price.
         """
-        daily = await self.data.get_daily(symbol)
+        # Fetch 220 days so we have enough for 200-day SMA filter
+        daily = await self.data.get_daily(symbol, days=220)
 
         if not daily or len(daily) < 20:
             logger.warning(f"Analyzer: insufficient daily data for {symbol} — skipping")
@@ -185,6 +186,12 @@ class SignalAnalyzer:
                 weekly_trend = "uptrend"
                 weekly_penalty = 0.3
 
+        # --- 200-day SMA filter (Minervini/O'Neil) ---
+        # Hard filter: no BUY signals when price is below the 200-day SMA.
+        # Exception: range-bound markets (mean_reverting regime, ADX < 20).
+        sma_200 = float(np.mean(closes[-200:])) if len(closes) >= 200 else None
+        below_sma_200 = sma_200 is not None and current_price < sma_200
+
         # --- Score technical signals (range: -5 to +5) ---
         tech_score, tech_reasons = self._score_technical(
             current_rsi, current_histogram, crossover, current_vol_ratio, current_price,
@@ -241,15 +248,22 @@ class SignalAnalyzer:
         # --- Determine signal type with risk/reward filter ---
         signal_type = "HOLD"
         if conviction >= self.config.min_signal_strength:
-            # Check risk/reward: potential reward must be >= 1.5× potential risk
-            reward = profit_target - current_price
-            risk = current_price - stop_loss
-            if risk > 0 and reward / risk >= 1.5:
-                signal_type = "BUY"
-            elif risk <= 0:
-                signal_type = "BUY"  # stop below zero edge case, allow it
+            # 200-day SMA hard filter — no BUY in structural downtrend.
+            # Exception: range-bound markets (low ADX < 20).
+            if below_sma_200 and current_adx >= 20:
+                tech_reasons.append(
+                    f"Below 200-day SMA (${sma_200:.2f}) — no BUY in downtrend"
+                )
             else:
-                tech_reasons.append(f"R:R too low ({reward/risk:.1f}:1, need 1.5:1)")
+                # Check risk/reward: potential reward must be >= 1.5× potential risk
+                reward = profit_target - current_price
+                risk = current_price - stop_loss
+                if risk > 0 and reward / risk >= 1.5:
+                    signal_type = "BUY"
+                elif risk <= 0:
+                    signal_type = "BUY"  # stop below zero edge case, allow it
+                else:
+                    tech_reasons.append(f"R:R too low ({reward/risk:.1f}:1, need 1.5:1)")
         elif conviction <= -self.config.min_signal_strength:
             signal_type = "SELL"
 

@@ -219,7 +219,8 @@ class TestOnlineOptimizer:
         assert adjusted["min_signal_strength"] <= params["min_signal_strength"]
 
     def test_learning_rate_decays(self):
-        optimizer = OnlineOptimizer(learning_rate=0.05, decay=0.99)
+        # Disable momentum to isolate the decay behavior under test
+        optimizer = OnlineOptimizer(learning_rate=0.05, decay=0.99, momentum=0.0)
         from app.adaptation.layer1_optimizer.parameter_space import get_defaults
 
         params = get_defaults()
@@ -233,6 +234,8 @@ class TestOnlineOptimizer:
 
         # Simulate many trades
         optimizer._trade_count = 100
+        # Reset momentum state so we measure pure decay, not previous-delta carry-over
+        optimizer._prev_adjustments = {}
         adj2 = optimizer._compute_adjustment(params, position, pnl=-2.0)
         diff2 = abs(adj2["min_signal_strength"] - params["min_signal_strength"])
 
