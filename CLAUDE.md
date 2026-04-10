@@ -104,7 +104,8 @@ signal-terminal/
         │   └── positions.py, websocket.py
         ├── engine/              ← Signal engine + data providers
         │   ├── indicators.py    ← EMA, RSI, MACD, ATR, Bollinger, Stochastic, ADX, divergence
-        │   ├── analyzer.py      ← Conviction scoring → BUY/SELL/HOLD (R:R filter, weekly trend)
+        │   ├── analyzer.py      ← Cluster-based scoring + BUY filters (R:R, 200d SMA,
+        │   │                      Minervini trend template) + position sizing (Van Tharp)
         │   ├── signal_service.py ← Signal persistence + dedup (one per symbol/day)
         │   ├── data_provider.py ← DataProvider ABC (strategy pattern)
         │   ├── hybrid_provider.py ← Routes US→Massive, .TO→yfinance
@@ -138,7 +139,9 @@ signal-terminal/
             ├── database.py      ← Async engine + session + get_db dependency
             └── migrations/
                 └── versions/    ← 001_initial_schema, 002_discovery_tables,
-                                    003_position_tables
+                                    003_position_tables, 004_screener_updated_at,
+                                    005_rename_max_hold_bars_to_days,
+                                    006_add_effective_stop, 007_add_passes_trend_template
 ```
 
 ---
@@ -166,7 +169,7 @@ signal-terminal/
 
 ### Testing
 - **Unit tests required** for all critical logic before moving to next phase
-- Backend tests: `backend/tests/` — 7 files, 121 tests (`pytest` + `pytest-asyncio`)
+- Backend tests: `backend/tests/` — 6 files, 135 tests (`pytest` + `pytest-asyncio`)
 - Frontend tests: `frontend/src/` — 3 files, 30 tests (`vitest` + `@testing-library/react`)
 - Critical = anything that produces numbers users act on: indicators, analyzer, exit strategies, P&L calculations, position manager, sentiment scoring
 - Mock external dependencies (DB, APIs) — test pure logic
@@ -179,6 +182,19 @@ signal-terminal/
 | OHLCV (daily + intraday) | Massive.com (unlimited) | yfinance (free) |
 | News sentiment | Massive `/v2/reference/news` (built-in insights) | Finnhub `/company-news` + Claude Haiku |
 | Fundamentals (P/E, ROE) | Finnhub `/stock/metric` + `/stock/recommendation` | Finnhub (same) |
+
+### Signal Quality Filters (BUY signals must pass ALL)
+1. **Conviction ≥ min_signal_strength** (regime-tuned, default 1.5)
+2. **Risk/Reward ≥ 1.5:1** (potential reward ÷ potential loss)
+3. **200-day SMA filter** — price must be above 200d SMA (exception: ADX < 20 range-bound)
+4. **Minervini trend template** — price > 50d & 150d SMA, MAs stacked, within 25% of 52w high, 20%+ above 52w low
+5. **Cluster-based scoring** — RSI/Stochastic decorrelated, ADX additive (not multiplicative), volume is the only multiplier
+
+### Position Sizing (Van Tharp + AQR conviction overlay)
+Every BUY signal includes a `position_sizing` block with calculated shares:
+- Base: `risk_dollars / (entry - stop)` where `risk_dollars = portfolio × risk_per_trade_pct`
+- Conviction overlay: ±25% based on signal strength
+- Capped at `max_position_pct` of portfolio (default 25%)
 
 ### General
 - No direct brokerage integration — user logs trades manually
@@ -205,6 +221,11 @@ DEFAULT_ATR_MULTIPLIER_STOP=2.5
 DEFAULT_ATR_MULTIPLIER_TARGET=4.0
 EOD_EXIT_ENABLED=false
 MAX_HOLD_DAYS=25
+
+# Position Sizing (Van Tharp fixed fractional risk)
+PORTFOLIO_SIZE_CAD=10000
+RISK_PER_TRADE_PCT=1.0
+MAX_POSITION_PCT=25.0
 ```
 
 ---
@@ -260,7 +281,7 @@ MAX_HOLD_DAYS=25
 - [x] Celery beat schedule runs full daily pipeline
 - [x] Resend email notifications (watchlist, meta-review, critical alerts)
 - [x] Docker Compose with all services (db, redis, backend, frontend, celery worker + beat)
-- [x] 151 tests across 10 files (backend: indicators, analyzer, exit strategies, position manager, adaptation, signal quality; frontend: api, PnlBadge, SignalBadge)
+- [x] 165 tests across 10 files (135 backend: indicators, analyzer, exit strategies, position manager, adaptation, signal quality; 30 frontend: api, PnlBadge, SignalBadge)
 - [x] Cold-start scripts (`seed_universe.py`, `seed_historical.py`)
 
 **Phase 7 — DONE:**

@@ -5,6 +5,16 @@
 
 ---
 
+## Status
+
+**Phase A complete (3/3 quick wins):** 200-day SMA filter, optimizer learning rate, sentiment asymmetry
+**Phase B complete (3/3 core improvements):** Position sizing, decorrelated scoring, trend template
+**Phase C pending (4 advanced):** Phased trailing stop, 52w high proximity, regime sizing, HMM
+
+135 backend tests + 30 frontend tests passing.
+
+---
+
 ## Current System Performance
 
 | Metric | Current | Target |
@@ -20,7 +30,7 @@
 
 ### 1.1 Position Size Calculator
 
-**Status:** NOT IMPLEMENTED
+**Status:** ✅ DONE (commit 3e6349d)
 **Impact:** Highest single improvement
 **Evidence:** Van Tharp, Turtle Traders, Monte Carlo simulations
 
@@ -43,7 +53,7 @@ position_size = risk_per_trade / (entry_price - stop_loss)
 
 ### 1.2 Trend Template Pre-Filter (Minervini Style)
 
-**Status:** NOT IMPLEMENTED
+**Status:** ✅ DONE (commit 83a9b07)
 **Impact:** High — eliminates the largest class of losing trades
 **Evidence:** Mark Minervini (334% return, 2021 USIC championship), O'Neil research (95% of 10-baggers passed this template before their move)
 
@@ -66,7 +76,7 @@ position_size = risk_per_trade / (entry_price - stop_loss)
 
 ### 1.3 200-Day SMA Hard Filter for BUY Signals
 
-**Status:** PARTIALLY IMPLEMENTED (weekly trend filter penalizes but doesn't block)
+**Status:** ✅ DONE (commit 9118193)
 **Impact:** Medium-High — strongest documented trend filter
 **Evidence:** Every major swing trading methodology (Minervini, O'Neil, Weinstein)
 
@@ -89,7 +99,7 @@ if signal_type == "BUY" and current_price < sma_200:
 
 ### 2.1 Decorrelate Indicator Scoring
 
-**Status:** NOT IMPLEMENTED
+**Status:** ✅ DONE (commit 7685ded)
 **Impact:** High — prevents false confidence from redundant signals
 **Evidence:** Statistical best practice; current system triple-counts momentum
 
@@ -132,7 +142,7 @@ Phase 3 (+2 ATR profit onward): Trail at 3.0x ATR below highest close
 
 ### 2.3 Reduce Sentiment Weight + Asymmetric Scoring
 
-**Status:** NOT IMPLEMENTED
+**Status:** ✅ DONE (commit b300d6c)
 **Impact:** Medium
 **Evidence:** Tetlock 2007 (Journal of Finance) — negative sentiment is 2-3x more informative than positive
 
@@ -174,7 +184,7 @@ week52_proximity = current_price / max(closes[-252:])
 
 ### 3.2 Optimizer Learning Rate Fix
 
-**Status:** NEEDS FIX
+**Status:** ✅ DONE (commit 9118193)
 **Impact:** Medium — prevents parameter oscillation
 **Evidence:** Online learning best practices; current 0.05 is 2.5-5x too aggressive
 
@@ -269,21 +279,21 @@ Current news score treats "earnings surprise" same as "CEO interview." Flag upco
 ## Implementation Order
 
 ```
-Phase A (Quick Wins — 1-2 days):
-  1.3  200-day SMA hard filter
-  3.2  Optimizer learning rate fix (0.05 → 0.015)
-  2.3  Sentiment weight reduction + asymmetric scoring
+Phase A (Quick Wins — 1-2 days) — ✅ DONE:
+  ✅ 1.3  200-day SMA hard filter           (commit 9118193)
+  ✅ 3.2  Optimizer learning rate fix       (commit 9118193)
+  ✅ 2.3  Sentiment asymmetric scoring      (commit b300d6c)
 
-Phase B (Core Improvements — 3-5 days):
-  1.1  Position size calculator
-  2.1  Decorrelate indicator scoring
-  1.2  Trend template pre-filter
+Phase B (Core Improvements — 3-5 days) — ✅ DONE:
+  ✅ 1.1  Position size calculator          (commit 3e6349d)
+  ✅ 2.1  Decorrelate indicator scoring     (commit 7685ded)
+  ✅ 1.2  Trend template pre-filter         (commit 83a9b07)
 
-Phase C (Advanced — 1-2 weeks):
-  2.2  Phased trailing stop
-  3.1  52-week high proximity
-  3.3  Regime-based position sizing
-  3.4  HMM regime detection
+Phase C (Advanced — 1-2 weeks) — pending:
+  ⏳ 2.2  Phased trailing stop
+  ⏳ 3.1  52-week high proximity
+  ⏳ 3.3  Regime-based position sizing
+  ⏳ 3.4  HMM regime detection
 ```
 
 ---
