@@ -50,7 +50,7 @@ class AnalyzerConfig:
         self.macd_slow: int = 26
         self.macd_signal: int = 9
         self.volume_multiplier: float = 1.3  # daily volume spikes are less extreme
-        self.min_signal_strength: float = 1.5  # swing signals develop gradually
+        self.min_signal_strength: float = 1.4  # lowered after cluster decorrelation
 
         # Composite weights (must sum to 1.0)
         # Sentiment reduced from 0.3 -> 0.2 based on Tetlock (2007) — positive

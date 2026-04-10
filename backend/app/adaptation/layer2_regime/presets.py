@@ -35,27 +35,27 @@ REGIME_PRESETS: dict[str, dict] = {
         "technical_weight": 0.60,
         "sentiment_weight": 0.25,  # bear regimes — sentiment slightly more useful
         "fundamental_weight": 0.15,
-        # Tight stops, take profits quickly
-        "atr_target_multiplier": 3.0,
+        # R:R = 3.2 / 2.0 = 1.60. Tight-ish stops, modest targets in bear regime
+        "atr_target_multiplier": 3.2,
         "atr_stop_multiplier": 2.0,
         "max_hold_days": 15,  # ~3 weeks
     },
     "mean_reverting": {
         "rsi_oversold": 28,
         "rsi_overbought": 72,
-        "min_signal_strength": 1.5,
+        "min_signal_strength": 1.4,
         "technical_weight": 0.60,
         "sentiment_weight": 0.20,
         "fundamental_weight": 0.20,
-        # Take profits at mean
-        "atr_target_multiplier": 3.5,
-        "atr_stop_multiplier": 2.5,
+        # R:R = 4.0 / 2.0 = 2.0, comfortably above the 1.5 filter
+        "atr_target_multiplier": 4.0,
+        "atr_stop_multiplier": 2.0,
         "max_hold_days": 20,  # ~4 weeks
     },
     "volatile_choppy": {
         "rsi_oversold": 22,
         "rsi_overbought": 78,
-        "min_signal_strength": 1.8,
+        "min_signal_strength": 1.6,
         "technical_weight": 0.55,
         "sentiment_weight": 0.25,  # bear/volatile — sentiment slightly more useful
         "fundamental_weight": 0.20,
