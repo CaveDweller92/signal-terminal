@@ -331,96 +331,163 @@ class SignalAnalyzer:
         divergence: dict | None = None,
     ) -> tuple[float, list[str]]:
         """
-        Score technical indicators on a -5 to +5 scale.
-        Each indicator contributes a sub-score; they're summed and clamped.
-        Calibrated for daily bar data (swing trading).
+        Cluster-based technical scoring on -5 to +5 scale.
+
+        Indicators are grouped into independent clusters. Within each cluster,
+        we take the strongest signal (by absolute value) rather than summing —
+        this avoids triple-counting correlated indicators.
+
+        Clusters (max contribution):
+          - Momentum:      max(RSI, Stochastic)   ±2.0
+          - Trend:         max(MACD, EMA cross)    ±2.0
+          - Volatility:    Bollinger %B           ±1.0
+          - Trend strength: ADX (additive)         ±0.5
+          - Divergence:    RSI divergence          ±1.5
+          - Volume:        vol_ratio (multiplier)  0.6x-1.3x
+
+        Volume is the ONLY multiplier — it confirms direction of the base signal.
+        ADX is additive (used to be multiplier) — avoids non-linear score swings.
         """
-        score = 0.0
         reasons: list[str] = []
 
-        # RSI
+        # --- Momentum cluster: RSI + Stochastic (take stronger) ---
+        rsi_contribution = 0.0
         if rsi < self.config.rsi_oversold:
-            score += 2.0
-            reasons.append(f"RSI oversold ({rsi:.1f})")
+            rsi_contribution = 2.0
+            rsi_reason = f"RSI oversold ({rsi:.1f})"
         elif rsi < 40:
-            score += 1.0
-            reasons.append(f"RSI approaching oversold ({rsi:.1f})")
+            rsi_contribution = 1.0
+            rsi_reason = f"RSI approaching oversold ({rsi:.1f})"
         elif rsi > self.config.rsi_overbought:
-            score -= 2.0
-            reasons.append(f"RSI overbought ({rsi:.1f})")
+            rsi_contribution = -2.0
+            rsi_reason = f"RSI overbought ({rsi:.1f})"
         elif rsi > 60:
-            score -= 1.0
-            reasons.append(f"RSI approaching overbought ({rsi:.1f})")
+            rsi_contribution = -1.0
+            rsi_reason = f"RSI approaching overbought ({rsi:.1f})"
+        else:
+            rsi_reason = ""
 
-        # MACD histogram — normalize by price for comparable scale across stocks
+        stoch_contribution = 0.0
+        if stoch_k < 20:
+            stoch_contribution = 1.5
+            stoch_reason = f"Stochastic oversold (%K={stoch_k:.1f})"
+        elif stoch_k < 30:
+            stoch_contribution = 0.75
+            stoch_reason = f"Stochastic approaching oversold (%K={stoch_k:.1f})"
+        elif stoch_k > 80:
+            stoch_contribution = -1.5
+            stoch_reason = f"Stochastic overbought (%K={stoch_k:.1f})"
+        elif stoch_k > 70:
+            stoch_contribution = -0.75
+            stoch_reason = f"Stochastic approaching overbought (%K={stoch_k:.1f})"
+        else:
+            stoch_reason = ""
+
+        # Take the stronger momentum signal (by absolute value), capped at ±2.0
+        if abs(rsi_contribution) >= abs(stoch_contribution):
+            momentum_score = rsi_contribution
+            if rsi_reason:
+                reasons.append(rsi_reason)
+        else:
+            momentum_score = stoch_contribution
+            if stoch_reason:
+                reasons.append(stoch_reason)
+        momentum_score = max(-2.0, min(2.0, momentum_score))
+
+        # --- Trend cluster: MACD + EMA crossover (take stronger) ---
+        # MACD: normalize by ATR instead of price to avoid price-level bias
+        # (but we don't have ATR here yet — fall back to price normalization for now)
         macd_pct = (macd_hist / current_price) * 100 if current_price > 0 else 0
+        macd_contribution = 0.0
+        macd_reason = ""
         if macd_pct > 0:
-            macd_score = min(macd_pct * 2.0, 2.0)
-            score += macd_score
-            reasons.append(f"MACD bullish ({macd_pct:.2f}% of price)")
+            macd_contribution = min(macd_pct * 2.0, 2.0)
+            macd_reason = f"MACD bullish ({macd_pct:.2f}% of price)"
         elif macd_pct < 0:
-            macd_score = min(abs(macd_pct) * 2.0, 2.0)
-            score -= macd_score
-            reasons.append(f"MACD bearish ({macd_pct:.2f}% of price)")
+            macd_contribution = max(macd_pct * 2.0, -2.0)
+            macd_reason = f"MACD bearish ({macd_pct:.2f}% of price)"
 
-        # EMA crossover (10/50 for swing) — reduced fresh cross bonus from 2.0 to 1.5
+        ema_contribution = 0.0
+        ema_reason = ""
         if crossover["crossover"] == "bullish":
             if crossover["just_crossed"]:
-                score += 1.5
-                reasons.append("Bullish EMA crossover (fresh)")
+                ema_contribution = 1.5
+                ema_reason = "Bullish EMA crossover (fresh)"
             else:
-                score += 0.5
-                reasons.append("Bullish EMA trend")
+                ema_contribution = 0.5
+                ema_reason = "Bullish EMA trend"
         elif crossover["crossover"] == "bearish":
             if crossover["just_crossed"]:
-                score -= 1.5
-                reasons.append("Bearish EMA crossover (fresh)")
+                ema_contribution = -1.5
+                ema_reason = "Bearish EMA crossover (fresh)"
             else:
-                score -= 0.5
-                reasons.append("Bearish EMA trend")
+                ema_contribution = -0.5
+                ema_reason = "Bearish EMA trend"
 
-        # Bollinger Bands %B (±1.0 max)
+        # Take the stronger trend signal
+        if abs(macd_contribution) >= abs(ema_contribution):
+            trend_score = macd_contribution
+            if macd_reason:
+                reasons.append(macd_reason)
+        else:
+            trend_score = ema_contribution
+            if ema_reason:
+                reasons.append(ema_reason)
+        trend_score = max(-2.0, min(2.0, trend_score))
+
+        # --- Volatility cluster: Bollinger %B (±1.0) ---
+        vol_score = 0.0
         if bb_pct_b < 0.0:
-            score += 1.0
+            vol_score = 1.0
             reasons.append(f"Below lower Bollinger Band (%B={bb_pct_b:.2f})")
         elif bb_pct_b < 0.2:
-            score += 0.5
+            vol_score = 0.5
             reasons.append(f"Near lower Bollinger Band (%B={bb_pct_b:.2f})")
         elif bb_pct_b > 1.0:
-            score -= 1.0
+            vol_score = -1.0
             reasons.append(f"Above upper Bollinger Band (%B={bb_pct_b:.2f})")
         elif bb_pct_b > 0.8:
-            score -= 0.5
+            vol_score = -0.5
             reasons.append(f"Near upper Bollinger Band (%B={bb_pct_b:.2f})")
 
-        # Stochastic %K (±1.0 max)
-        if stoch_k < 20:
-            score += 1.0
-            reasons.append(f"Stochastic oversold (%K={stoch_k:.1f})")
-        elif stoch_k > 80:
-            score -= 1.0
-            reasons.append(f"Stochastic overbought (%K={stoch_k:.1f})")
+        # --- Trend strength (ADX) — ADDITIVE, not multiplicative ---
+        # Strong ADX reinforces the existing directional score; weak ADX slightly discounts it.
+        adx_score = 0.0
+        if adx > 40:
+            # Strong trend — small boost in the direction already established
+            base_direction = momentum_score + trend_score
+            if base_direction > 0:
+                adx_score = 0.5
+                reasons.append(f"Strong trend confirms bullish (ADX={adx:.1f})")
+            elif base_direction < 0:
+                adx_score = -0.5
+                reasons.append(f"Strong trend confirms bearish (ADX={adx:.1f})")
+        elif adx < 20:
+            # Weak trend — slight discount in the direction already established
+            base_direction = momentum_score + trend_score
+            if base_direction > 0:
+                adx_score = -0.3
+                reasons.append(f"Weak trend discounts bullish (ADX={adx:.1f})")
+            elif base_direction < 0:
+                adx_score = 0.3
+                reasons.append(f"Weak trend discounts bearish (ADX={adx:.1f})")
 
-        # ADX — trend strength multiplier (0.8x to 1.2x)
-        if adx < 20:
-            score *= 0.8
-            reasons.append(f"Weak trend (ADX={adx:.1f}) — signal discounted")
-        elif adx > 40:
-            score *= 1.2
-            reasons.append(f"Strong trend (ADX={adx:.1f}) — signal boosted")
-
-        # Divergence (±1.5)
+        # --- Divergence cluster (±1.5) ---
+        div_score = 0.0
         if divergence and divergence.get("type") != "none":
             div_conf = divergence.get("confidence", 0)
             if div_conf >= 0.3:
                 if divergence["type"] == "bullish":
-                    score += 1.5 * div_conf
+                    div_score = 1.5 * div_conf
                     reasons.append(f"Bullish RSI divergence (conf={div_conf:.0%})")
                 elif divergence["type"] == "bearish":
-                    score -= 1.5 * div_conf
+                    div_score = -1.5 * div_conf
                     reasons.append(f"Bearish RSI divergence (conf={div_conf:.0%})")
 
-        # Volume confirmation — multiplicative, not additive
+        # --- Base score = sum of independent clusters ---
+        score = momentum_score + trend_score + vol_score + adx_score + div_score
+
+        # --- Volume: multiplicative confirmation (the ONLY multiplier) ---
         if vol_ratio >= 2.0:
             score *= 1.3
             reasons.append(f"Volume spike ({vol_ratio:.1f}x avg) confirms move")
